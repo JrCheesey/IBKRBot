@@ -1,6 +1,44 @@
-# IBKRBot v1.0.1
+# IBKRBot
 
-A Windows desktop application for Interactive Brokers swing trading with full paper and live trading support.
+[![Cross-Platform Test](https://github.com/JrCheesey/IBKRBot/workflows/Cross-Platform%20Test/badge.svg)](https://github.com/JrCheesey/IBKRBot/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)](INSTALL_LINUX_MAC.md)
+
+A desktop application for Interactive Brokers swing trading with full paper and live trading support.
+
+**⚠️ Educational Use Only**: This software is for educational purposes. Trading involves substantial risk of loss. See [LICENSE](LICENSE) for full disclaimer.
+
+---
+
+## 📥 Quick Start
+
+### Download Prebuilt Executable (Easiest)
+
+**Windows:**
+- Download the latest release: [Releases](https://github.com/JrCheesey/IBKRBot/releases)
+- Extract ZIP and run `IBKRBot.exe`
+
+**Linux / macOS:**
+- See [INSTALL_LINUX_MAC.md](INSTALL_LINUX_MAC.md) for installation instructions
+- Pre-built binaries available in [GitHub Actions artifacts](https://github.com/JrCheesey/IBKRBot/actions)
+
+### Run from Source
+
+```bash
+# Clone repository
+git clone https://github.com/JrCheesey/IBKRBot.git
+cd IBKRBot
+
+# Install dependencies
+pip install -e .
+
+# Run application
+ibkrbot
+```
+
+See [Installation & Setup](#installation--setup) for detailed instructions.
+
+---
 
 ## ✨ Features
 
@@ -23,16 +61,6 @@ A Windows desktop application for Interactive Brokers swing trading with full pa
 - **Market Hours Warning**: Alerts when market is closed
 - **Enhanced Error Messages**: Clear, actionable error descriptions
 - **About Dialog**: Full disclaimers and license information
-
-## Key Fixes in This Rebuild
-
-✅ **QAction Import Fixed**: Imports from `PySide6.QtGui` (not QtWidgets)
-✅ **Import-Safe UI**: No runtime code executes at module import time
-✅ **Proper Package Structure**: Uses `pyproject.toml` for installable package
-✅ **Defensive Coding**: Guards against None, empty lists, missing dict keys
-✅ **Clean Build Process**: Build scripts separated from artifacts
-✅ **PyInstaller Ready**: Proper spec file with all resources included
-✅ **Smoke Test Included**: Can verify imports without launching GUI
 
 ## Installation & Setup
 
