@@ -12,14 +12,14 @@ import sys
 import os
 
 
-def safe_print(msg: str) -> None:
+def safe_print(msg: str = "", **kwargs) -> None:
     """Print message with fallback for systems that don't support Unicode."""
     try:
-        safe_print(msg)
+        print(msg, **kwargs)
     except UnicodeEncodeError:
         # Fallback: remove emojis and special characters
         ascii_msg = msg.encode('ascii', 'ignore').decode('ascii')
-        safe_print(ascii_msg)
+        print(ascii_msg, **kwargs)
 
 
 def smoke_test() -> int:
