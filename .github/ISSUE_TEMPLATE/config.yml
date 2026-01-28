@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & Discussions
+    url: https://github.com/JrCheesey/IBKRBot/discussions
+    about: Ask questions and discuss IBKRBot with the community
+  - name: Security Vulnerabilities
+    url: https://github.com/JrCheesey/IBKRBot/security/advisories/new
+    about: Report security vulnerabilities privately
