@@ -12,7 +12,7 @@ from typing import Tuple
 class AppInfo:
     """Application metadata and version information"""
     NAME = "IBKRBot"
-    VERSION = "1.0.1"
+    VERSION = "1.0.2"
     AUTHOR = "Joshua Metcalf"
     DESCRIPTION = "A swing trading assistant for Interactive Brokers (Paper and Live)"
     REPO_URL = "https://github.com/JrCheesey/IBKRBot"

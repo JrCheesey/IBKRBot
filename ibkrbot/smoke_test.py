@@ -94,8 +94,38 @@ def smoke_test() -> int:
         safe_print(f"❌ FAIL: {e}")
         tests_failed += 1
     
-    # Test 6: Main module can be imported
-    safe_print("6. Testing main module import...", end=" ")
+    # Test 6: New v1.0.2 core modules
+    safe_print("6. Testing v1.0.2 core modules...", end=" ")
+    try:
+        from ibkrbot.core import sound, update_checker, trade_journal, alerts, config_backup, auto_reconnect, system_tray
+        safe_print("✅ PASS")
+        tests_passed += 1
+    except Exception as e:
+        safe_print(f"❌ FAIL: {e}")
+        tests_failed += 1
+
+    # Test 7: New v1.0.2 UI widgets
+    safe_print("7. Testing v1.0.2 UI widgets...", end=" ")
+    try:
+        from ibkrbot.ui.widgets import PortfolioWidget, WatchlistWidget
+        safe_print("✅ PASS")
+        tests_passed += 1
+    except Exception as e:
+        safe_print(f"❌ FAIL: {e}")
+        tests_failed += 1
+
+    # Test 8: Theme system
+    safe_print("8. Testing theme system...", end=" ")
+    try:
+        from ibkrbot.ui.theme import ThemeMode, ThemeManager, get_theme_manager, Colors, ColorsDark
+        safe_print("✅ PASS")
+        tests_passed += 1
+    except Exception as e:
+        safe_print(f"❌ FAIL: {e}")
+        tests_failed += 1
+
+    # Test 9: Main module can be imported
+    safe_print("9. Testing main module import...", end=" ")
     try:
         from ibkrbot import main
         safe_print("✅ PASS")
