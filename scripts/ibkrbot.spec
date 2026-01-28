@@ -2,7 +2,7 @@
 """
 PyInstaller spec file for IBKRBot v2.
 
-This spec file packages the IBKRBot application into a Windows executable.
+This spec file packages the IBKRBot application for Windows, Linux, and macOS.
 
 Key improvements in this version:
 - Uses project root detection that works in all contexts
@@ -146,3 +146,20 @@ coll = COLLECT(
     upx_exclude=[],
     name="IBKRBot",
 )
+
+# macOS: Create .app bundle
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="IBKRBot.app",
+        icon=None,  # Add .icns icon here if available
+        bundle_identifier="com.jrcheesey.ibkrbot",
+        info_plist={
+            "CFBundleName": "IBKRBot",
+            "CFBundleDisplayName": "IBKRBot",
+            "CFBundleVersion": "1.0.1",
+            "CFBundleShortVersionString": "1.0.1",
+            "NSHighResolutionCapable": "True",
+            "LSMinimumSystemVersion": "10.13.0",
+        },
+    )

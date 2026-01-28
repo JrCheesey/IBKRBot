@@ -228,16 +228,26 @@ rmdir /s /q dist
 # Note: scripts/ folder is preserved!
 ```
 
-## Requirements
+## System Requirements
 
+### Windows
+- Windows 10 or 11
+- Python 3.11+ (tested with 3.14)
+- 4 GB RAM minimum (8 GB recommended)
+
+### Linux / macOS (Experimental)
+- **Status**: Code is cross-platform compatible but untested
+- See [INSTALL_LINUX_MAC.md](INSTALL_LINUX_MAC.md) for installation instructions
+- **Community help needed**: Please test and report issues!
+
+### Dependencies
 - Python 3.11+
-- PySide6 (Qt6)
-- yfinance
-- pandas
-- numpy
+- PySide6 (Qt6) - cross-platform GUI
+- yfinance - market data
+- pandas, numpy - data processing
 - ibapi (Interactive Brokers API)
-- matplotlib
-- PyInstaller (for building exe)
+- matplotlib - charting
+- PyInstaller (for building executables)
 
 ## License
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
-# Use matplotlib in a headless-safe way for Windows + PyInstaller
+# Use matplotlib in a headless-safe way (cross-platform, works with PyInstaller)
 import matplotlib
 matplotlib.use("Agg")  # noqa: E402
 

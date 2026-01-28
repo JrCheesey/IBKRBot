@@ -107,6 +107,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Cross-Platform Support** (Experimental - Untested):
+  - Linux and macOS compatibility
+  - Platform-specific user data directories (Windows: %APPDATA%, macOS: ~/Library/Application Support, Linux: ~/.config)
+  - Cross-platform build script (`scripts/build_exe.sh`)
+  - macOS app bundle support in PyInstaller spec
+  - Comprehensive Linux/macOS installation guide
+  - **Status**: Code is cross-platform but needs community testing
+
+### Changed
+- Updated `paths.py` to use platform-appropriate data directories
+- Updated PyInstaller spec to support Windows, Linux, and macOS builds
+- Updated matplotlib backend comment to reflect cross-platform compatibility
+
 ### Planned Features
 - Dark theme support (color palette already defined)
 - Multi-symbol portfolio management
