@@ -332,7 +332,8 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status)
 
         self.conn_dot = QLabel("●")
-        self.conn_dot.setStyleSheet(Styles.connection_dot_disconnected())
+        # Use bright red that's visible in both light and dark mode
+        self.conn_dot.setStyleSheet("color: #ff5555; font-size: 16px;")
         self.conn_text = QLabel("Disconnected")
         self.task_text = QLabel("Ready")
         self.task_spinner = QProgressBar()
@@ -525,7 +526,8 @@ class MainWindow(QMainWindow):
             if not is_connected and self.conn_text.text() != "Disconnected":
                 # Connection lost
                 self.logger.warning("Connection to IB Gateway lost")
-                self.conn_dot.setStyleSheet(Styles.connection_dot_disconnected())
+                # Use bright red that's visible in both light and dark mode
+                self.conn_dot.setStyleSheet("color: #ff5555; font-size: 16px;")
                 self.conn_text.setText("Disconnected")
                 self.status_label.setText("Connection lost")
                 self._update_workflow()
@@ -1266,15 +1268,30 @@ class MainWindow(QMainWindow):
         mode_display = mode.upper()
         self.netliq_label.setText(f"NetLiq: {self._net_liq:,.2f} ({mode_display})")
 
-        # Play connect sound
-        self._sound_player.play(SOUND_CONNECT)
+        # Update connection status indicator FIRST (before any potentially failing operations)
+        self.logger.info("Connected. NetLiq=%.2f mode=%s", self._net_liq, mode)
+        # Use bright green that's visible in both light and dark mode
+        self.conn_dot.setStyleSheet("color: #00ff00; font-size: 16px;")
+        self.conn_text.setText(f"Connected ({mode_display})")
 
-        # Update tray status
-        if self._tray_manager.is_available:
-            self._tray_manager.set_status(f"Connected ({mode_display})")
+        # Play connect sound (may fail silently)
+        try:
+            self._sound_player.play(SOUND_CONNECT)
+        except Exception as e:
+            self.logger.warning(f"Failed to play connect sound: {e}")
+
+        # Update tray status (may fail silently)
+        try:
+            if self._tray_manager.is_available:
+                self._tray_manager.set_status(f"Connected ({mode_display})")
+        except Exception as e:
+            self.logger.warning(f"Failed to update tray status: {e}")
 
         # Notify reconnect manager of successful connection
-        self._reconnect_manager.on_connection_success()
+        try:
+            self._reconnect_manager.on_connection_success()
+        except Exception as e:
+            self.logger.warning(f"Failed to notify reconnect manager: {e}")
 
         if mode == "paper":
             self.paper_note.setText("✅ Paper Mode: Simulated trading (NetLiq often shows $1,000,000)")
@@ -1282,10 +1299,6 @@ class MainWindow(QMainWindow):
         else:
             self.paper_note.setText("🔴 LIVE MODE: Real money! All orders require confirmation.")
             self.paper_note.setStyleSheet("color: #cc0000; font-weight: bold; background-color: #ffeeee; padding: 5px;")
-
-        self.logger.info("Connected. NetLiq=%.2f mode=%s", self._net_liq, mode)
-        self.conn_dot.setStyleSheet(Styles.connection_dot_connected())
-        self.conn_text.setText(f"Connected ({mode_display})")
 
         # Start connection health monitoring
         self._connection_check_timer.start()
