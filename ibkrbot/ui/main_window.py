@@ -517,11 +517,11 @@ class MainWindow(QMainWindow):
 
     def _check_connection_health(self) -> None:
         """Periodic check for connection health"""
-        if not self.ib or not self.ib.client:
+        if not self.ib:
             return
 
         try:
-            is_connected = self.ib.client.isConnected()
+            is_connected = self.ib.isConnected()
             if not is_connected and self.conn_text.text() != "Disconnected":
                 # Connection lost
                 self.logger.warning("Connection to IB Gateway lost")
@@ -799,7 +799,7 @@ class MainWindow(QMainWindow):
             self.paper_note.setStyleSheet("color: #cc0000; font-weight: bold; background-color: #ffeeee; padding: 5px;")
 
         # If connected, need to reconnect with new mode
-        if self.ib and self.ib.client and self.ib.client.isConnected():
+        if self.ib and self.ib.isConnected():
             reply = QMessageBox.question(
                 self,
                 "Reconnect Required",
