@@ -35,6 +35,8 @@ jobs:
         pip install -e .
 
     - name: Run smoke test
+      env:
+        QT_QPA_PLATFORM: offscreen
       run: python -m ibkrbot.smoke_test
 
     - name: Compile all Python files
@@ -44,7 +46,8 @@ jobs:
       run: |
         python -c "from ibkrbot.core.paths import user_data_dir; print('User data dir:', user_data_dir())"
         python -c "from ibkrbot.core.config import load_config; print('Config loaded')"
-        python -c "from ibkrbot.ui.main_window import MainWindow; print('UI imports OK')"
+        python -c "from ibkrbot.core.constants import AppInfo; print('App version:', AppInfo.VERSION)"
+        python -c "from ibkrbot.core.ibkr.client import IbkrClient; print('IBKR client import OK')"
 
   build:
     name: Build on ${{ matrix.os }}
@@ -79,7 +82,7 @@ jobs:
       if: runner.os != 'Windows'
       run: |
         chmod +x scripts/build_exe.sh
-        ./scripts/build_exe.sh
+        bash scripts/build_exe.sh
 
     - name: Check build output (Windows)
       if: runner.os == 'Windows'
