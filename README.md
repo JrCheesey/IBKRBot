@@ -6,11 +6,11 @@
 
 A desktop application for Interactive Brokers swing trading with full paper and live trading support.
 
-**Warning: Educational Use Only**: This software is for educational purposes. Trading involves substantial risk of loss. See [LICENSE](LICENSE) for full disclaimer.
+**⚠️ Educational Use Only**: This software is for educational purposes. Trading involves substantial risk of loss. See [LICENSE](LICENSE) for full disclaimer.
 
 ---
 
-## Quick Start
+## 📥 Quick Start
 
 ### Download Prebuilt Executable (Easiest)
 
@@ -40,7 +40,7 @@ See [Installation & Setup](#installation--setup) for detailed instructions.
 
 ---
 
-## Features
+## ✨ Features
 
 ### Core Trading Features
 - **ATR-Based Swing Strategy**: Propose bracket orders using ATR pullback methodology
@@ -84,7 +84,7 @@ See [Installation & Setup](#installation--setup) for detailed instructions.
 - **Unit Tests**: pytest test suite for core modules
 - **CI/CD**: GitHub Actions testing on Windows, Linux, and macOS
 
-## Installation & Setup
+## 🔧 Installation & Setup
 
 ### 1. Install Package (Editable Mode)
 
@@ -124,7 +124,7 @@ python -m ibkrbot.smoke_test
 # Should output: "Smoke test passed! All imports successful."
 ```
 
-## Building Windows Executable
+## 🏗️ Building Windows Executable
 
 ### Prerequisites
 
@@ -162,7 +162,7 @@ pyinstaller --clean ^
     run_ibkrbot.py
 ```
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 IBKRBot/
@@ -246,7 +246,7 @@ IBKRBot/
 └── dist/                   # Final executable output (gitignored)
 ```
 
-## Running Tests
+## 🧪 Running Tests
 
 ```bash
 # Run unit tests
@@ -262,7 +262,7 @@ pytest --cov=ibkrbot
 python -m ibkrbot.smoke_test
 ```
 
-## Common Issues & Solutions
+## ❓ Common Issues & Solutions
 
 ### Issue: `ModuleNotFoundError: No module named 'ibkrbot'`
 
@@ -293,7 +293,7 @@ python -m ibkrbot.main
 
 **Solution**: Fixed. All button handlers are implemented in the fixed main_window.py.
 
-## System Requirements
+## 💻 System Requirements
 
 ### Windows
 - Windows 10 or 11
@@ -313,21 +313,21 @@ python -m ibkrbot.main
 - matplotlib - charting
 - PyInstaller (for building executables)
 
-## Contributing
+## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
-## Security
+## 🔒 Security
 
 See [SECURITY.md](SECURITY.md) for security policy and how to report vulnerabilities.
 
-## License
+## 📄 License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
 **IMPORTANT**: This software is for educational purposes only. Trading involves substantial risk of loss. See the trading disclaimer in the LICENSE file and in the application's About dialog.
 
-## Support
+## 💬 Support
 
 - **Issues**: [GitHub Issues](https://github.com/JrCheesey/IBKRBot/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/JrCheesey/IBKRBot/discussions)
