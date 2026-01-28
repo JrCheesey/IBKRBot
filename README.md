@@ -6,11 +6,11 @@
 
 A desktop application for Interactive Brokers swing trading with full paper and live trading support.
 
-**⚠️ Educational Use Only**: This software is for educational purposes. Trading involves substantial risk of loss. See [LICENSE](LICENSE) for full disclaimer.
+**Warning: Educational Use Only**: This software is for educational purposes. Trading involves substantial risk of loss. See [LICENSE](LICENSE) for full disclaimer.
 
 ---
 
-## 📥 Quick Start
+## Quick Start
 
 ### Download Prebuilt Executable (Easiest)
 
@@ -40,7 +40,7 @@ See [Installation & Setup](#installation--setup) for detailed instructions.
 
 ---
 
-## ✨ Features
+## Features
 
 ### Core Trading Features
 - **ATR-Based Swing Strategy**: Propose bracket orders using ATR pullback methodology
@@ -62,6 +62,28 @@ See [Installation & Setup](#installation--setup) for detailed instructions.
 - **Enhanced Error Messages**: Clear, actionable error descriptions
 - **About Dialog**: Full disclaimers and license information
 
+### New in v1.0.2
+
+**Theme & UI**
+- **Dark Mode**: Full dark theme with View menu toggle
+- **System Tray**: Minimize to tray with desktop notifications
+- **Portfolio Widget**: Real-time account summary and positions display
+- **Watchlist Widget**: Multi-symbol price monitoring with auto-refresh
+
+**Trading Tools**
+- **Trade Journal**: Track all trades with P&L, R-multiple calculations, and CSV export
+- **Price Alerts**: Set custom alerts for price levels (above, below, crosses)
+- **Sound Notifications**: Audio feedback for connections, orders, and alerts
+
+**Reliability**
+- **Auto-Reconnect**: Automatic reconnection with exponential backoff on connection loss
+- **Config Backup/Restore**: Backup and restore all settings, journal, and plans
+- **Update Checker**: Check for new releases from GitHub
+
+**Developer Features**
+- **Unit Tests**: pytest test suite for core modules
+- **CI/CD**: GitHub Actions testing on Windows, Linux, and macOS
+
 ## Installation & Setup
 
 ### 1. Install Package (Editable Mode)
@@ -70,7 +92,7 @@ See [Installation & Setup](#installation--setup) for detailed instructions.
 # From the project root (folder containing pyproject.toml)
 pip install -e .
 
-# Or install with dev dependencies (includes PyInstaller)
+# Or install with dev dependencies (includes PyInstaller, pytest)
 pip install -e ".[dev]"
 ```
 
@@ -99,7 +121,7 @@ python -m ibkrbot.main
 # Test that all imports work without errors
 python -m ibkrbot.smoke_test
 
-# Should output: "✅ Smoke test passed! All imports successful."
+# Should output: "Smoke test passed! All imports successful."
 ```
 
 ## Building Windows Executable
@@ -143,40 +165,52 @@ pyinstaller --clean ^
 ## Project Structure
 
 ```
-IBKRBot_v2_FIXED/
-├── pyproject.toml          # Package configuration (NEW!)
+IBKRBot/
+├── pyproject.toml          # Package configuration
 ├── README.md               # This file
-├── run_ibkrbot.py          # Simple entry wrapper for PyInstaller
-├── requirements.txt        # Deprecated (use pyproject.toml)
+├── CHANGELOG.md            # Version history
+├── CONTRIBUTING.md         # Contribution guidelines
+├── CODE_OF_CONDUCT.md      # Community guidelines
+├── SECURITY.md             # Security policy
+├── LICENSE                 # MIT License
+├── run_ibkrbot.py          # Entry wrapper for PyInstaller
 │
 ├── ibkrbot/                # Main package
 │   ├── __init__.py
-│   ├── main.py            # Entry point
-│   ├── smoke_test.py      # Import verification (NEW!)
+│   ├── main.py             # Entry point
+│   ├── smoke_test.py       # Import verification
 │   │
-│   ├── ui/                # GUI components
-│   │   ├── __init__.py
-│   │   ├── main_window.py  # FIXED: QAction from QtGui, import-safe
-│   │   ├── dialogs.py
-│   │   └── logging_handler.py
+│   ├── ui/                 # GUI components
+│   │   ├── main_window.py  # Main application window
+│   │   ├── dialogs.py      # Dialog windows
+│   │   ├── logging_handler.py
+│   │   ├── theme.py        # Dark/light theme system
+│   │   └── widgets/        # Reusable UI widgets
+│   │       ├── portfolio_widget.py
+│   │       └── watchlist_widget.py
 │   │
-│   ├── core/              # Business logic
-│   │   ├── __init__.py
-│   │   ├── config.py
+│   ├── core/               # Business logic
+│   │   ├── config.py       # Configuration management
 │   │   ├── logging_setup.py
-│   │   ├── paths.py
-│   │   ├── plan.py
-│   │   ├── data_sources.py
-│   │   ├── task_runner.py
+│   │   ├── paths.py        # Path utilities
+│   │   ├── plan.py         # Trade plan management
+│   │   ├── data_sources.py # Yahoo Finance integration
+│   │   ├── task_runner.py  # Background task runner
 │   │   │
-│   │   ├── ibkr/          # IBKR API wrappers
-│   │   │   ├── __init__.py
+│   │   ├── sound.py        # Sound notifications (v1.0.2)
+│   │   ├── alerts.py       # Price alerts (v1.0.2)
+│   │   ├── trade_journal.py # Trade journal (v1.0.2)
+│   │   ├── update_checker.py # Update checker (v1.0.2)
+│   │   ├── config_backup.py # Backup/restore (v1.0.2)
+│   │   ├── auto_reconnect.py # Auto-reconnect (v1.0.2)
+│   │   ├── system_tray.py  # System tray (v1.0.2)
+│   │   │
+│   │   ├── ibkr/           # IBKR API wrappers
 │   │   │   ├── client.py
 │   │   │   ├── contracts.py
 │   │   │   └── orders.py
 │   │   │
-│   │   ├── features/      # Trading features
-│   │   │   ├── __init__.py
+│   │   ├── features/       # Trading features
 │   │   │   ├── proposer.py
 │   │   │   ├── placer.py
 │   │   │   ├── show_orders.py
@@ -184,23 +218,48 @@ IBKRBot_v2_FIXED/
 │   │   │   ├── janitor.py
 │   │   │   └── manager.py
 │   │   │
-│   │   └── visual/        # Charting
+│   │   └── visual/         # Charting
 │   │       └── chart.py
 │   │
-│   └── resources/         # Static resources
+│   └── resources/          # Static resources
 │       ├── config.default.json
 │       └── docs/
-│           ├── START_HERE.txt
-│           ├── SETUP_CHECKLIST.txt
-│           └── README.txt
 │
-├── scripts/               # Build scripts (NEW! separated from artifacts)
-│   ├── build_exe.bat     # PyInstaller build script
-│   ├── ibkrbot.spec      # PyInstaller spec file
+├── tests/                  # Unit tests
+│   ├── test_trade_journal.py
+│   ├── test_alerts.py
+│   ├── test_config_backup.py
+│   └── test_update_checker.py
+│
+├── scripts/                # Build scripts
+│   ├── build_exe.bat
+│   ├── ibkrbot.spec
 │   └── make_release_zip.bat
 │
-├── build_artifacts/       # PyInstaller temp files (gitignored)
-└── dist/                  # Final executable output (gitignored)
+├── .github/                # GitHub configuration
+│   ├── workflows/          # CI/CD pipelines
+│   │   └── test.yml
+│   ├── ISSUE_TEMPLATE/     # Issue templates
+│   └── PULL_REQUEST_TEMPLATE.md
+│
+├── build_artifacts/        # PyInstaller temp files (gitignored)
+└── dist/                   # Final executable output (gitignored)
+```
+
+## Running Tests
+
+```bash
+# Run unit tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run with coverage
+pytest --cov=ibkrbot
+
+# Run smoke test (import verification)
+python -m ibkrbot.smoke_test
 ```
 
 ## Common Issues & Solutions
@@ -214,7 +273,7 @@ IBKRBot_v2_FIXED/
 pip install -e .
 
 # Option B: Ensure you're in the project root
-cd /path/to/IBKRBot_v2_FIXED
+cd /path/to/IBKRBot
 python -m ibkrbot.main
 ```
 
@@ -234,28 +293,6 @@ python -m ibkrbot.main
 
 **Solution**: Fixed. All button handlers are implemented in the fixed main_window.py.
 
-## Development
-
-### Running Tests
-
-```bash
-# Import smoke test
-python -m ibkrbot.smoke_test
-
-# Full compile check
-python -m compileall ibkrbot
-```
-
-### Cleaning Build Artifacts
-
-```bash
-# Windows
-rmdir /s /q build_artifacts
-rmdir /s /q dist
-
-# Note: scripts/ folder is preserved!
-```
-
 ## System Requirements
 
 ### Windows
@@ -263,10 +300,9 @@ rmdir /s /q dist
 - Python 3.11+ (tested with 3.14)
 - 4 GB RAM minimum (8 GB recommended)
 
-### Linux / macOS (Experimental)
-- **Status**: Code is cross-platform compatible but untested
+### Linux / macOS
 - See [INSTALL_LINUX_MAC.md](INSTALL_LINUX_MAC.md) for installation instructions
-- **Community help needed**: Please test and report issues!
+- Pre-built binaries available from GitHub Actions
 
 ### Dependencies
 - Python 3.11+
@@ -277,6 +313,14 @@ rmdir /s /q dist
 - matplotlib - charting
 - PyInstaller (for building executables)
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for security policy and how to report vulnerabilities.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
@@ -285,4 +329,5 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
-For issues or questions, please open an issue on GitHub: https://github.com/JrCheesey/IBKRBot/issues
+- **Issues**: [GitHub Issues](https://github.com/JrCheesey/IBKRBot/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/JrCheesey/IBKRBot/discussions)
