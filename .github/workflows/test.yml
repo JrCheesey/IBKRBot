@@ -1,0 +1,125 @@
+name: Cross-Platform Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.11', '3.12']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Display Python version
+      run: python --version
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+
+    - name: Run smoke test
+      run: python -m ibkrbot.smoke_test
+
+    - name: Compile all Python files
+      run: python -m compileall ibkrbot -q
+
+    - name: Test imports
+      run: |
+        python -c "from ibkrbot.core.paths import user_data_dir; print('User data dir:', user_data_dir())"
+        python -c "from ibkrbot.core.config import load_config; print('Config loaded')"
+        python -c "from ibkrbot.ui.main_window import MainWindow; print('UI imports OK')"
+
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies and PyInstaller
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pyinstaller
+
+    - name: Build with PyInstaller (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        pyinstaller scripts/ibkrbot.spec --noconfirm
+
+    - name: Build with PyInstaller (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        chmod +x scripts/build_exe.sh
+        ./scripts/build_exe.sh
+
+    - name: Check build output (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        if (Test-Path "dist/IBKRBot/IBKRBot.exe") {
+          Write-Host "✅ Windows build successful"
+          Get-Item "dist/IBKRBot/IBKRBot.exe" | Select-Object Name,Length
+        } else {
+          Write-Error "❌ Windows build failed - executable not found"
+          exit 1
+        }
+      shell: pwsh
+
+    - name: Check build output (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        if [ -f "dist/IBKRBot/IBKRBot" ]; then
+          echo "✅ Linux build successful"
+          ls -lh dist/IBKRBot/IBKRBot
+        else
+          echo "❌ Linux build failed - executable not found"
+          exit 1
+        fi
+
+    - name: Check build output (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        if [ -d "dist/IBKRBot.app" ]; then
+          echo "✅ macOS build successful"
+          ls -lh dist/IBKRBot.app/Contents/MacOS/IBKRBot
+        else
+          echo "❌ macOS build failed - app bundle not found"
+          exit 1
+        fi
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: IBKRBot-${{ runner.os }}-${{ runner.arch }}
+        path: |
+          dist/IBKRBot/
+          dist/IBKRBot.app/
+        retention-days: 7
