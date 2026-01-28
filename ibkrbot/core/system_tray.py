@@ -1,7 +1,4 @@
-"""
-System tray support for IBKRBot.
-Allows the application to minimize to system tray with notifications.
-"""
+"""System tray support."""
 from __future__ import annotations
 import logging
 import sys
@@ -21,8 +18,6 @@ except ImportError:
 
 
 class TrayIconManager:
-    """Manages the system tray icon and notifications."""
-
     def __init__(self, app_name: str = "IBKRBot"):
         self._app_name = app_name
         self._tray_icon: Optional[QSystemTrayIcon] = None
@@ -34,22 +29,12 @@ class TrayIconManager:
 
     @property
     def is_available(self) -> bool:
-        """Check if system tray is available."""
         if not _qt_available:
             return False
         return QSystemTrayIcon.isSystemTrayAvailable()
 
     def setup(self, main_window, icon_path: Optional[str] = None) -> bool:
-        """
-        Setup the system tray icon.
-
-        Args:
-            main_window: The main application window
-            icon_path: Optional path to icon file
-
-        Returns:
-            True if setup successful
-        """
+        """Setup tray icon with context menu."""
         if not self.is_available:
             _log.warning("System tray not available on this system")
             return False
@@ -105,36 +90,23 @@ class TrayIconManager:
         return True
 
     def show(self) -> None:
-        """Show the tray icon."""
         if self._tray_icon:
             self._tray_icon.show()
 
     def hide(self) -> None:
-        """Hide the tray icon."""
         if self._tray_icon:
             self._tray_icon.hide()
 
     def set_status(self, status: str) -> None:
-        """Update the status text in the tray menu."""
         if self._status_action:
             self._status_action.setText(f"Status: {status}")
 
     def set_tooltip(self, tooltip: str) -> None:
-        """Set the tray icon tooltip."""
         if self._tray_icon:
             self._tray_icon.setToolTip(tooltip)
 
     def show_notification(self, title: str, message: str,
                          icon_type: str = "info", duration_ms: int = 5000) -> None:
-        """
-        Show a system notification.
-
-        Args:
-            title: Notification title
-            message: Notification message
-            icon_type: "info", "warning", or "error"
-            duration_ms: Duration in milliseconds
-        """
         if not self._tray_icon:
             return
 
@@ -150,24 +122,19 @@ class TrayIconManager:
         _log.debug(f"Tray notification: {title} - {message}")
 
     def set_show_callback(self, callback: Callable) -> None:
-        """Set callback for show window action."""
         self._show_callback = callback
 
     def set_quit_callback(self, callback: Callable) -> None:
-        """Set callback for quit action."""
         self._quit_callback = callback
 
     def set_minimize_to_tray(self, enabled: bool) -> None:
-        """Enable/disable minimize to tray behavior."""
         self._minimize_to_tray = enabled
 
     @property
     def minimize_to_tray_enabled(self) -> bool:
-        """Check if minimize to tray is enabled."""
         return self._minimize_to_tray and self.is_available
 
     def _on_show_window(self) -> None:
-        """Handle show window action."""
         if self._show_callback:
             self._show_callback()
         elif self._main_window:
@@ -176,14 +143,12 @@ class TrayIconManager:
             self._main_window.activateWindow()
 
     def _on_quit(self) -> None:
-        """Handle quit action."""
         if self._quit_callback:
             self._quit_callback()
         elif self._main_window:
             self._main_window.close()
 
     def _on_tray_activated(self, reason) -> None:
-        """Handle tray icon activation (click)."""
         if reason == QSystemTrayIcon.DoubleClick:
             self._on_show_window()
         elif reason == QSystemTrayIcon.Trigger:
@@ -200,7 +165,6 @@ _tray_manager: Optional[TrayIconManager] = None
 
 
 def get_tray_manager() -> TrayIconManager:
-    """Get the global tray manager instance."""
     global _tray_manager
     if _tray_manager is None:
         _tray_manager = TrayIconManager()

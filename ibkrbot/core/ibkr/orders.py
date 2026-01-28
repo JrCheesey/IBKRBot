@@ -4,26 +4,11 @@ from ibapi.order import Order
 
 
 class BracketOrderError(Exception):
-    """Raised when bracket order parameters are invalid."""
     pass
 
 
 def validate_bracket_prices(action: str, entry: float, stop: float, take: float) -> None:
-    """
-    Validate that bracket order prices are logically consistent.
-
-    For BUY orders: stop < entry < take
-    For SELL orders: take < entry < stop
-
-    Args:
-        action: "BUY" or "SELL"
-        entry: Entry limit price
-        stop: Stop loss price
-        take: Take profit price
-
-    Raises:
-        BracketOrderError: If prices are not logically consistent
-    """
+    """Validate bracket price relationships for BUY/SELL."""
     if entry <= 0 or stop <= 0 or take <= 0:
         raise BracketOrderError("All prices must be positive")
 
@@ -49,32 +34,7 @@ def bracket_orders(
     stop_loss_price: float,
     validate: bool = True
 ) -> Tuple[Order, Order, Order]:
-    """
-    Create a bracket order (parent + take profit + stop loss).
-
-    A bracket order consists of:
-    - Parent order: Limit order to enter the position
-    - Take profit: Limit order to exit at profit target (OCA with stop)
-    - Stop loss: Stop order to exit at loss limit (OCA with take)
-
-    The parent order has transmit=False so all three orders are submitted
-    together atomically. Only the stop loss has transmit=True.
-
-    Args:
-        action: "BUY" or "SELL" for the entry direction
-        quantity: Number of shares/contracts
-        limit_price: Entry limit price
-        take_profit_price: Take profit limit price
-        stop_loss_price: Stop loss trigger price
-        validate: If True, validate price relationships before creating orders
-
-    Returns:
-        Tuple of (parent_order, take_profit_order, stop_loss_order)
-
-    Raises:
-        BracketOrderError: If validate=True and prices are inconsistent
-        ValueError: If quantity is not positive
-    """
+    """Create bracket order: parent LMT + take LMT + stop STP."""
     if quantity <= 0:
         raise ValueError(f"Quantity must be positive, got {quantity}")
 

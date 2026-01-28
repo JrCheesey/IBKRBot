@@ -1,22 +1,16 @@
-"""
-UI theme and styling constants for IBKRBot.
-Centralizes all colors, fonts, and style definitions.
-Supports light and dark themes.
-"""
+"""UI theme and styling."""
 from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
 
 class ThemeMode(Enum):
-    """Available theme modes."""
     LIGHT = "light"
     DARK = "dark"
     SYSTEM = "system"  # Follow system preference
 
 
 class Colors:
-    """Color palette for the application (Light Theme)"""
     # Status colors
     SUCCESS = "#0a0"           # Green for success/connected
     ERROR = "#b00"             # Red for errors/disconnected
@@ -44,7 +38,6 @@ class Colors:
 
 
 class ColorsDark:
-    """Dark theme color palette (for future implementation)"""
     # Status colors
     SUCCESS = "#0f0"
     ERROR = "#f55"
@@ -72,14 +65,12 @@ class ColorsDark:
 
 
 class Fonts:
-    """Font settings for the application"""
     SIZE_TITLE = 13           # Workflow titles, section headers
     SIZE_BODY = 10            # Normal text
     SIZE_SMALL = 9            # Small text, hints
 
 
 class Spacing:
-    """Spacing and sizing constants"""
     PADDING_SMALL = 4
     PADDING_MEDIUM = 8
     PADDING_LARGE = 12
@@ -97,26 +88,20 @@ class Spacing:
 
 
 class Styles:
-    """Pre-built style strings for common UI patterns"""
-
     @staticmethod
     def secondary_text() -> str:
-        """Style for secondary/muted text"""
         return f"color: {Colors.TEXT_SECONDARY};"
 
     @staticmethod
     def hint_text() -> str:
-        """Style for hint text"""
         return f"color: {Colors.TEXT_HINT};"
 
     @staticmethod
     def workflow_step() -> str:
-        """Style for workflow step labels"""
         return f"color: {Colors.TEXT_PRIMARY};"
 
     @staticmethod
     def workflow_next_box() -> str:
-        """Style for 'Next:' suggestion box"""
         return (
             f"margin-top: {Spacing.PADDING_MEDIUM}px; "
             f"padding: {Spacing.PADDING_MEDIUM}px; "
@@ -128,7 +113,6 @@ class Styles:
 
     @staticmethod
     def warning_banner() -> str:
-        """Style for warning banners"""
         return (
             f"padding: {Spacing.PADDING_MEDIUM}px; "
             f"border-radius: {Spacing.BORDER_RADIUS}px; "
@@ -139,7 +123,6 @@ class Styles:
 
     @staticmethod
     def error_banner() -> str:
-        """Style for error banners"""
         return (
             f"padding: {Spacing.PADDING_MEDIUM}px; "
             f"border-radius: {Spacing.BORDER_RADIUS}px; "
@@ -150,7 +133,6 @@ class Styles:
 
     @staticmethod
     def chart_border() -> str:
-        """Style for chart thumbnail border"""
         return (
             f"border: 1px solid {Colors.BORDER_LIGHT}; "
             f"border-radius: {Spacing.BORDER_RADIUS}px; "
@@ -160,22 +142,18 @@ class Styles:
 
     @staticmethod
     def connection_dot_connected() -> str:
-        """Style for connection status dot (connected)"""
         return f"color: {Colors.SUCCESS};"
 
     @staticmethod
     def connection_dot_disconnected() -> str:
-        """Style for connection status dot (disconnected)"""
         return f"color: {Colors.ERROR};"
 
     @staticmethod
     def unsaved_warning() -> str:
-        """Style for unsaved changes warning"""
         return f"color: {Colors.ERROR};"
 
 
 class StylesDark:
-    """Pre-built style strings for dark theme."""
 
     @staticmethod
     def secondary_text() -> str:
@@ -243,8 +221,6 @@ class StylesDark:
 
 
 class ThemeManager:
-    """Manages the application theme."""
-
     _instance: Optional['ThemeManager'] = None
     _current_mode: ThemeMode = ThemeMode.LIGHT
 
@@ -268,7 +244,6 @@ class ThemeManager:
         return self._current_mode == ThemeMode.DARK
 
     def _detect_system_dark_mode(self) -> bool:
-        """Detect if system is using dark mode."""
         try:
             from PySide6.QtWidgets import QApplication
             from PySide6.QtGui import QPalette
@@ -285,16 +260,13 @@ class ThemeManager:
 
     @property
     def colors(self):
-        """Get the current color palette."""
         return ColorsDark if self.is_dark else Colors
 
     @property
     def styles(self):
-        """Get the current styles class."""
         return StylesDark if self.is_dark else Styles
 
     def get_dark_mode_stylesheet(self) -> str:
-        """Get a complete dark mode stylesheet for the application."""
         return """
             QMainWindow, QDialog, QWidget {
                 background-color: #1e1e1e;
@@ -486,11 +458,103 @@ class ThemeManager:
         """
 
     def get_light_mode_stylesheet(self) -> str:
-        """Get a complete light mode stylesheet (essentially reset to defaults)."""
-        return ""  # Return empty to use Qt defaults
+        return """
+            QMainWindow, QDialog, QWidget {
+                background-color: #f5f5f5;
+                color: #333333;
+            }
+            QLabel {
+                color: #333333;
+            }
+            QPushButton {
+                background-color: #e0e0e0;
+                color: #333333;
+                border: 1px solid #ccc;
+                padding: 6px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #d0d0d0;
+            }
+            QPushButton:pressed {
+                background-color: #c0c0c0;
+            }
+            QPushButton:disabled {
+                background-color: #f0f0f0;
+                color: #999;
+            }
+            QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {
+                background-color: #ffffff;
+                color: #333333;
+                border: 1px solid #ccc;
+                padding: 4px;
+                border-radius: 3px;
+            }
+            QComboBox {
+                background-color: #ffffff;
+                color: #333333;
+                border: 1px solid #ccc;
+                padding: 4px;
+                border-radius: 3px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #ffffff;
+                color: #333333;
+                selection-background-color: #cce5ff;
+            }
+            QGroupBox {
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                margin-top: 8px;
+                padding-top: 8px;
+                color: #333333;
+            }
+            QTableWidget {
+                background-color: #ffffff;
+                color: #333333;
+                gridline-color: #ddd;
+                border: 1px solid #ccc;
+            }
+            QTableWidget::item:selected {
+                background-color: #cce5ff;
+            }
+            QHeaderView::section {
+                background-color: #e8e8e8;
+                color: #333333;
+                padding: 4px;
+                border: 1px solid #ccc;
+            }
+            QTabWidget::pane {
+                border: 1px solid #ccc;
+                background-color: #f5f5f5;
+            }
+            QTabBar::tab {
+                background-color: #e0e0e0;
+                color: #333333;
+                padding: 8px 16px;
+                border: 1px solid #ccc;
+            }
+            QTabBar::tab:selected {
+                background-color: #f5f5f5;
+            }
+            QCheckBox, QRadioButton {
+                color: #333333;
+            }
+            QMenuBar {
+                background-color: #f5f5f5;
+                color: #333333;
+            }
+            QMenu {
+                background-color: #ffffff;
+                color: #333333;
+                border: 1px solid #ccc;
+            }
+            QMenu::item:selected {
+                background-color: #cce5ff;
+            }
+        """
 
     def get_current_stylesheet(self) -> str:
-        """Get stylesheet for current theme mode."""
         if self.is_dark:
             return self.get_dark_mode_stylesheet()
         return self.get_light_mode_stylesheet()
@@ -501,7 +565,6 @@ _theme_manager: Optional[ThemeManager] = None
 
 
 def get_theme_manager() -> ThemeManager:
-    """Get the global theme manager instance."""
     global _theme_manager
     if _theme_manager is None:
         _theme_manager = ThemeManager()
@@ -509,7 +572,6 @@ def get_theme_manager() -> ThemeManager:
 
 
 def apply_theme(mode: ThemeMode) -> None:
-    """Apply a theme to the application."""
     try:
         from PySide6.QtWidgets import QApplication
 
@@ -524,7 +586,6 @@ def apply_theme(mode: ThemeMode) -> None:
 
 
 def toggle_dark_mode() -> bool:
-    """Toggle between light and dark mode. Returns True if now dark."""
     manager = get_theme_manager()
     new_mode = ThemeMode.LIGHT if manager.is_dark else ThemeMode.DARK
     apply_theme(new_mode)

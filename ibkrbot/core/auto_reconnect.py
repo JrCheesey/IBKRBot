@@ -1,7 +1,4 @@
-"""
-Auto-reconnect logic for IBKRBot.
-Handles automatic reconnection to IB Gateway when connection is lost.
-"""
+"""Auto-reconnect for IB Gateway."""
 from __future__ import annotations
 import logging
 import threading
@@ -15,7 +12,6 @@ _log = logging.getLogger(__name__)
 
 @dataclass
 class ReconnectConfig:
-    """Configuration for auto-reconnect behavior."""
     enabled: bool = True
     max_attempts: int = 5
     initial_delay_seconds: float = 5.0
@@ -25,8 +21,6 @@ class ReconnectConfig:
 
 
 class AutoReconnectManager:
-    """Manages automatic reconnection to IB Gateway."""
-
     def __init__(self, config: Optional[ReconnectConfig] = None):
         self._config = config or ReconnectConfig()
         self._attempt_count = 0
@@ -101,11 +95,12 @@ class AutoReconnectManager:
             return
 
         # Check if we've reset the counter due to stable connection
-        if self._last_success:
-            seconds_since_success = (datetime.now(timezone.utc) - self._last_success).total_seconds()
-            if seconds_since_success > self._config.reset_after_success_seconds:
-                _log.debug("Resetting attempt counter due to previous stable connection")
-                self._attempt_count = 0
+        with self._lock:
+            if self._last_success:
+                seconds_since_success = (datetime.now(timezone.utc) - self._last_success).total_seconds()
+                if seconds_since_success > self._config.reset_after_success_seconds:
+                    _log.debug("Resetting attempt counter due to previous stable connection")
+                    self._attempt_count = 0
 
         _log.info("Connection lost, starting auto-reconnect")
         self._start_reconnect()

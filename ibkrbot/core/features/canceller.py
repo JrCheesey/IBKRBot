@@ -5,14 +5,8 @@ from ..task_runner import TaskContext
 from ..ibkr.client import IbkrClient
 from ..constants import Timeouts, OrderStatus, RetryDefaults
 
-def cancel_open_brackets(ctx: TaskContext, ib: IbkrClient, symbol: str, retries: int = RetryDefaults.CANCEL_MAX_RETRIES, wait_s: float = RetryDefaults.CANCEL_RETRY_DELAY) -> Dict[str, int]:
-    """
-    Cancels all open (non-final) orders for a symbol with retry/refresh.
-
-    Addresses common IB behavior:
-    - Open orders list may be stale (refresh needed)
-    - Cancelling already-cancelled/stale IDs can error; we treat cancel as "best effort"
-    """
+def cancel_open_brackets(ctx: TaskContext, ib: IbkrClient, symbol: str, retries: int = RetryDefaults.MAX_RETRIES, wait_s: float = RetryDefaults.DELAY_SEC) -> Dict[str, int]:
+    """Cancel all active orders for symbol with retry/refresh."""
     attempted = 0
     cancel_requests = 0
     for i in range(retries):

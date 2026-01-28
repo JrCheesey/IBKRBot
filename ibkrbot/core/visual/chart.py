@@ -21,35 +21,32 @@ def save_price_thumbnail(
     take: float,
     symbol: str,
     out_path: Path,
+    direction: str = "Long",
 ) -> Path:
-    """
-    Save a small PNG chart thumbnail to out_path.
-
-    - Single plot only (no subplots)
-    - No explicit colors specified (matplotlib defaults)
-    """
+    """Save a PNG chart thumbnail with entry/stop/take levels."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     fig = Figure(figsize=(5.6, 2.0), dpi=120)
     _ = FigureCanvas(fig)
     ax = fig.add_subplot(111)
 
-    # X axis: use integer positions to avoid datetime conversion + heavy formatting in thumbnails
     x = list(range(len(closes)))
-    ax.plot(x, closes)
+    ax.plot(x, closes, color="#333333", linewidth=1)
 
-    # Entry/stop/take lines (defaults)
+    # Color-coded lines: entry=blue, stop=red, take=green
     if entry > 0:
-        ax.axhline(entry, linestyle="--")
+        ax.axhline(entry, linestyle="--", color="#2196F3", linewidth=1.5, label=f"Entry ${entry:.2f}")
     if stop > 0:
-        ax.axhline(stop, linestyle=":")
+        ax.axhline(stop, linestyle=":", color="#F44336", linewidth=1.5, label=f"Stop ${stop:.2f}")
     if take > 0:
-        ax.axhline(take, linestyle="--")
+        ax.axhline(take, linestyle="--", color="#4CAF50", linewidth=1.5, label=f"Take ${take:.2f}")
 
-    ax.set_title(f"{symbol} (close)")
-    ax.set_xlabel("Bars")
-    ax.set_ylabel("Price")
+    dir_label = "Short" if direction.lower() == "short" else "Long"
+    ax.set_title(f"{symbol} ({dir_label})", fontsize=10)
+    ax.set_xlabel("Bars", fontsize=8)
+    ax.set_ylabel("Price", fontsize=8)
     ax.grid(True, alpha=0.25)
+    ax.legend(loc="upper left", fontsize=7)
 
     fig.tight_layout()
     fig.savefig(str(out_path), format="png")
@@ -57,9 +54,7 @@ def save_price_thumbnail(
 
 
 def snapshot_from_dataframe(df, max_bars: int = 450) -> Dict[str, Any]:
-    """
-    Store a compact snapshot of time + Close series so we can regenerate the chart later.
-    """
+    """Extract time + close series from dataframe for chart storage."""
     if df is None or df.empty:
         return {"t": [], "close": []}
     d2 = df.tail(max_bars)
@@ -69,9 +64,7 @@ def snapshot_from_dataframe(df, max_bars: int = 450) -> Dict[str, Any]:
 
 
 def save_thumbnail_from_plan(plan: Dict[str, Any], *, out_path: Path) -> Path | None:
-    """
-    Regenerate a thumbnail from a plan snapshot, if present.
-    """
+    """Regenerate thumbnail from plan's data_snapshot."""
     snap = plan.get("data_snapshot") or {}
     times = snap.get("t") or []
     closes = snap.get("close") or []
@@ -82,4 +75,5 @@ def save_thumbnail_from_plan(plan: Dict[str, Any], *, out_path: Path) -> Path | 
     stop = float(lv.get("stop", 0.0) or 0.0)
     take = float(lv.get("take_profit", 0.0) or 0.0)
     symbol = plan.get("symbol", "—")
-    return save_price_thumbnail(times, closes, entry=entry, stop=stop, take=take, symbol=symbol, out_path=out_path)
+    direction = plan.get("direction", "Long")
+    return save_price_thumbnail(times, closes, entry=entry, stop=stop, take=take, symbol=symbol, out_path=out_path, direction=direction)

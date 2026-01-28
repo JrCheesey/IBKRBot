@@ -13,18 +13,7 @@ _log = logging.getLogger(__name__)
 
 
 def parse_time_string(time_str: str) -> Tuple[int, int]:
-    """
-    Parse a HH:MM time string into hour and minute integers.
-
-    Args:
-        time_str: Time string in HH:MM format (24-hour)
-
-    Returns:
-        Tuple of (hour, minute)
-
-    Raises:
-        ValueError: If time string is invalid
-    """
+    """Parse HH:MM to (hour, minute) tuple."""
     time_str = time_str.strip()
     pattern = r"^([01]?[0-9]|2[0-3]):([0-5][0-9])$"
     match = re.match(pattern, time_str)
@@ -34,22 +23,7 @@ def parse_time_string(time_str: str) -> Tuple[int, int]:
 
 
 def janitor_check_and_cancel(ctx: TaskContext, ib: IbkrClient, symbol: str, eod_local: str, stale_minutes: int) -> Dict[str, Any]:
-    """
-    Check if orders should be cancelled based on time-of-day rules.
-
-    Automatically cancels open bracket orders for a symbol if within
-    the configured threshold of end-of-day (EOD).
-
-    Args:
-        ctx: TaskContext for progress and cancellation
-        ib: Connected IbkrClient
-        symbol: Symbol to check orders for
-        eod_local: End-of-day time in HH:MM format (24-hour)
-        stale_minutes: Minutes threshold (unused, kept for API compatibility)
-
-    Returns:
-        Dict with 'action' (none/cancel), 'reason', and optional details
-    """
+    """Cancel orders if within EOD threshold."""
     now = dt.datetime.now()
 
     try:
@@ -66,8 +40,8 @@ def janitor_check_and_cancel(ctx: TaskContext, ib: IbkrClient, symbol: str, eod_
         return {"action":"none", "reason":"No open orders for symbol."}
 
     minutes_to_eod = (eod - now).total_seconds() / 60.0
-    if minutes_to_eod <= AutomationDefaults.JANITOR_EOD_THRESHOLD_MINUTES:
+    if minutes_to_eod <= AutomationDefaults.JANITOR_EOD_MINUTES:
         res = cancel_open_brackets(ctx, ib, symbol)
-        return {"action":"cancel", "reason":f"Within {AutomationDefaults.JANITOR_EOD_THRESHOLD_MINUTES} min of EOD ({eod_local}).", **res}
+        return {"action":"cancel", "reason":f"Within {AutomationDefaults.JANITOR_EOD_MINUTES} min of EOD ({eod_local}).", **res}
 
     return {"action":"none", "reason":"Not near EOD; no auto-cancel.", "open_orders": len(open_sym)}

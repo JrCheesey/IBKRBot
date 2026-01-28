@@ -264,9 +264,7 @@ class IbkrClient(EWrapper, EClient):
             self._logger.warning("cancelOrder failed for %s: %s", order_id, e)
 
     def snapshot_price(self, contract: Contract, timeout: float = 3.0) -> Optional[float]:
-        """
-        Best-effort snapshot price via IB market data. May be delayed/unavailable depending on permissions.
-        """
+        """Best-effort snapshot price via IB market data."""
         req_id = self.next_req_id()
         evt = threading.Event()
         with self._mkt_lock:

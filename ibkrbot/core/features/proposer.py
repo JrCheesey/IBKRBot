@@ -13,34 +13,12 @@ _log = logging.getLogger(__name__)
 
 
 class ProposalError(Exception):
-    """Raised when plan proposal fails due to invalid data or calculation errors."""
     pass
 
 
-def propose_swing_plan(ctx: TaskContext, symbol_cfg: Dict[str, Any], cfg: Dict[str, Any], net_liq: float) -> Dict[str, Any]:
-    """
-    Generate a swing trading plan proposal based on ATR pullback strategy.
-
-    This function:
-    1. Fetches historical OHLC data from Yahoo Finance
-    2. Computes ATR for volatility-based levels
-    3. Calculates entry, stop, and take profit prices
-    4. Determines position size based on risk limits
-    5. Generates a chart thumbnail for visual review
-
-    Args:
-        ctx: TaskContext for progress reporting and cancellation
-        symbol_cfg: Symbol configuration dict with 'symbol', 'exchange', 'currency'
-        cfg: Full application configuration dict
-        net_liq: Account net liquidation value
-
-    Returns:
-        Complete plan dict ready for saving and placement
-
-    Raises:
-        ProposalError: If calculation fails (insufficient data, invalid prices, etc.)
-        RuntimeError: If ATR cannot be computed or quantity is zero
-    """
+def propose_swing_plan(ctx: TaskContext, symbol_cfg: Dict[str, Any], cfg: Dict[str, Any], net_liq: float, direction: str = "long") -> Dict[str, Any]:
+    """Fetch data, compute ATR levels, and build a swing trade plan."""
+    is_short = direction.lower() == "short"
     symbol = symbol_cfg["symbol"]
     interval = cfg["strategy"]["bar_interval"]
     lookback = int(cfg["strategy"]["lookback_days"])
@@ -62,10 +40,18 @@ def propose_swing_plan(ctx: TaskContext, symbol_cfg: Dict[str, Any], cfg: Dict[s
     atr_v = float(a.dropna().iloc[-1])
     last_close = float(df["Close"].iloc[-1])
 
-    entry = round(last_close - (pullback_pct * atr_v) - (limit_offset_atr * atr_v), 2)
-    stop = round(entry - (stop_atr_mult * atr_v), 2)
-    risk_per_share = max(entry - stop, 0.01)
-    take = round(entry + take_r * risk_per_share, 2)
+    if is_short:
+        # Short position: entry above close, stop above entry, take below entry
+        entry = round(last_close + (pullback_pct * atr_v) + (limit_offset_atr * atr_v), 2)
+        stop = round(entry + (stop_atr_mult * atr_v), 2)
+        risk_per_share = max(stop - entry, 0.01)
+        take = round(entry - take_r * risk_per_share, 2)
+    else:
+        # Long position: entry below close, stop below entry, take above entry
+        entry = round(last_close - (pullback_pct * atr_v) - (limit_offset_atr * atr_v), 2)
+        stop = round(entry - (stop_atr_mult * atr_v), 2)
+        risk_per_share = max(entry - stop, 0.01)
+        take = round(entry + take_r * risk_per_share, 2)
 
     max_notional = float(cfg["risk"]["max_notional_pct"]) * net_liq
     max_loss = float(cfg["risk"]["max_loss_pct"]) * net_liq
@@ -100,11 +86,19 @@ def propose_swing_plan(ctx: TaskContext, symbol_cfg: Dict[str, Any], cfg: Dict[s
 
     ctx.progress("Draft plan built.")
 
-    # Validate price relationships for long bracket
-    if not (stop < entry < take):
-        raise ProposalError(
-            f"Invalid price levels: stop ({stop:.2f}) < entry ({entry:.2f}) < take ({take:.2f}) required for long bracket"
-        )
+    # Validate price relationships
+    if is_short:
+        # Short bracket: take < entry < stop
+        if not (take < entry < stop):
+            raise ProposalError(
+                f"Invalid price levels for short: take ({take:.2f}) < entry ({entry:.2f}) < stop ({stop:.2f}) required"
+            )
+    else:
+        # Long bracket: stop < entry < take
+        if not (stop < entry < take):
+            raise ProposalError(
+                f"Invalid price levels for long: stop ({stop:.2f}) < entry ({entry:.2f}) < take ({take:.2f}) required"
+            )
 
     # Compact snapshot + thumbnail for UI preview.
     snap = snapshot_from_dataframe(df, max_bars=int(cfg.get("ui", {}).get("thumbnail_max_bars", 450)))
@@ -121,16 +115,22 @@ def propose_swing_plan(ctx: TaskContext, symbol_cfg: Dict[str, Any], cfg: Dict[s
             take=take,
             symbol=symbol,
             out_path=thumb_path,
+            direction="Short" if is_short else "Long",
         )
         thumb_rel = f"thumbs/{fname}"
     except Exception as e:
         _log.warning("Failed to generate chart thumbnail for %s: %s", symbol, e)
         thumb_rel = None
 
+    action = "SELL" if is_short else "BUY"
+    direction_label = "Short" if is_short else "Long"
+
     return {
         "version": "2",
         "created_at": now_iso(),
         "symbol": symbol,
+        "direction": direction_label,
+        "action": action,
         "listing": {
             "exchange": symbol_cfg.get("exchange", "SMART"),
             "currency": symbol_cfg.get("currency", "USD"),
@@ -178,7 +178,7 @@ def propose_swing_plan(ctx: TaskContext, symbol_cfg: Dict[str, Any], cfg: Dict[s
             },
         },
         "notes": [
-            "Human-in-the-loop: review before placing.",
+            f"Human-in-the-loop: review before placing ({direction_label} position).",
             "Paper accounts may show simulated NetLiq (often 1,000,000).",
         ],
     }

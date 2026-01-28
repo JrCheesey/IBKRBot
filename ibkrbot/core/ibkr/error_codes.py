@@ -1,10 +1,7 @@
-"""
-IBKR API error code mappings and friendly error messages.
-Provides user-friendly explanations for common IBKR error codes.
-"""
+"""IBKR error code mappings."""
+
 
 class IBKRErrorCodes:
-    """IBKR API error code constants"""
     # Order errors
     DUPLICATE_ORDER_ID = 103
     ORDER_ID_USED = 104
@@ -152,16 +149,6 @@ class IBKRErrorCodes:
 
     @staticmethod
     def get_friendly_message(error_code: int, default_msg: str = "") -> dict:
-        """
-        Get friendly error message for an IBKR error code.
-
-        Args:
-            error_code: IBKR error code number
-            default_msg: Default message if code not found
-
-        Returns:
-            Dict with 'title', 'message', and 'hint' keys
-        """
         if error_code in IBKRErrorCodes.MESSAGES:
             return IBKRErrorCodes.MESSAGES[error_code]
 
@@ -173,30 +160,10 @@ class IBKRErrorCodes:
 
     @staticmethod
     def is_warning(error_code: int) -> bool:
-        """
-        Check if error code is informational (not an actual error).
-
-        Args:
-            error_code: IBKR error code number
-
-        Returns:
-            True if this is a warning/informational message
-        """
         return error_code in IBKRErrorCodes.WARNING_CODES
 
     @staticmethod
     def is_critical_error(error_code: int) -> bool:
-        """
-        Check if error code indicates a critical failure requiring intervention.
-
-        Args:
-            error_code: IBKR error code number
-
-        Returns:
-            True if critical error
-        """
-        # These errors typically indicate configuration or permission issues
-        # that require user action
         critical_codes = {
             IBKRErrorCodes.PERMISSION_DENIED,
             IBKRErrorCodes.ROUTING_ERROR,
@@ -210,15 +177,6 @@ class IBKRErrorCodes:
 
     @staticmethod
     def is_order_rejection(error_code: int) -> bool:
-        """
-        Check if error code indicates an order was rejected.
-
-        Args:
-            error_code: IBKR error code number
-
-        Returns:
-            True if order was rejected
-        """
         rejection_codes = {
             IBKRErrorCodes.PERMISSION_DENIED,
             IBKRErrorCodes.ORDER_REJECTED,

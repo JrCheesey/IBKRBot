@@ -19,29 +19,13 @@ from .theme import Colors, Fonts, Styles, Spacing
 
 
 def validate_time_format(time_str: str) -> bool:
-    """
-    Validate HH:MM time format (24-hour).
-
-    Args:
-        time_str: Time string to validate
-
-    Returns:
-        True if valid, False otherwise
-    """
+    """Validate HH:MM (24-hour) format."""
     pattern = r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$"
     return bool(re.match(pattern, time_str.strip()))
 
 
 def validate_host(host: str) -> bool:
-    """
-    Validate IP address or hostname.
-
-    Args:
-        host: Host string to validate
-
-    Returns:
-        True if valid, False otherwise
-    """
+    """Validate IP address or hostname."""
     host = host.strip()
     if not host:
         return False
@@ -73,12 +57,6 @@ def _fmt_money(x: float) -> str:
 
 
 class TradeTicketDialog(QDialog):
-    """
-    A polished "trade ticket" confirmation dialog.
-
-    - Always requires the confirmation checkbox.
-    - If in LIVE mode OR risk override needed, requires typing PLACE.
-    """
     def __init__(self, plan: Dict[str, Any], cfg: Dict[str, Any], *, risk_over: bool, mode: str, parent=None):
         super().__init__(parent)
         self.plan = plan
@@ -112,7 +90,8 @@ class TradeTicketDialog(QDialog):
 
         outer = QVBoxLayout()
 
-        title = QLabel(f"{symbol} — Bracket Order (Long)")
+        direction = plan.get("direction", "Long")
+        title = QLabel(f"{symbol} — Bracket Order ({direction})")
         f = QFont()
         f.setPointSize(Fonts.SIZE_TITLE)
         f.setBold(True)
@@ -413,15 +392,19 @@ class SettingsDialog(QDialog):
         self.ed_eod = QLineEdit(str(cfg.get("janitor", {}).get("eod_local","15:45")))
         self.sp_stale = QSpinBox(); self.sp_stale.setRange(1, 1440); self.sp_stale.setValue(int(cfg.get("janitor", {}).get("stale_minutes",120)))
         self.sp_mgr_poll = QSpinBox(); self.sp_mgr_poll.setRange(2, 300); self.sp_mgr_poll.setValue(int(cfg.get("manager", {}).get("poll_seconds",10)))
+        self.cb_snapshot = QCheckBox("Enable live price snapshot for R-multiple calculation")
+        self.cb_snapshot.setChecked(bool(cfg.get("manager", {}).get("enable_snapshot_price", False)))
 
         # Add helpful tooltips
         self.ed_eod.setToolTip("End-of-day time in 24-hour format (e.g., 15:45 = 3:45 PM)")
         self.sp_stale.setToolTip("How long to keep plan files before considering them stale")
         self.sp_mgr_poll.setToolTip("How often the manager checks positions and orders (seconds)")
+        self.cb_snapshot.setToolTip("Enable this if you have market data subscription. Disable to prevent subscription errors.")
 
         f5.addRow("EOD local (HH:MM):", self.ed_eod)
         f5.addRow("Stale minutes:", self.sp_stale)
         f5.addRow("Manager poll seconds:", self.sp_mgr_poll)
+        f5.addRow(self.cb_snapshot)
         self.tab_janitor.setLayout(f5)
 
         # ---- Symbols tab ----
@@ -532,6 +515,7 @@ class SettingsDialog(QDialog):
         self.ed_eod.setText(str(d.get("janitor", {}).get("eod_local","15:45")))
         self.sp_stale.setValue(int(d.get("janitor", {}).get("stale_minutes",120)))
         self.sp_mgr_poll.setValue(int(d.get("manager", {}).get("poll_seconds",10)))
+        self.cb_snapshot.setChecked(bool(d.get("manager", {}).get("enable_snapshot_price", False)))
 
         # symbols
         syms = d.get("symbols", [])
@@ -624,7 +608,10 @@ class SettingsDialog(QDialog):
         }
         cfg["data"] = {"yfinance_timeout_s": int(self.sp_yf_timeout.value())}
         cfg["janitor"] = {"eod_local": eod_time, "stale_minutes": int(self.sp_stale.value())}
-        cfg["manager"] = {"poll_seconds": int(self.sp_mgr_poll.value())}
+        cfg["manager"] = {
+            "poll_seconds": int(self.sp_mgr_poll.value()),
+            "enable_snapshot_price": bool(self.cb_snapshot.isChecked())
+        }
         cfg["symbols"] = self._collect_symbols()
 
         # Basic validation
@@ -665,9 +652,141 @@ class SettingsDialog(QDialog):
         self.accept()
 
 
+class PerformanceAnalyticsDialog(QDialog):
+    """Performance analytics dialog showing trade statistics."""
+
+    def __init__(self, trade_journal, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Performance Analytics")
+        self.resize(500, 450)
+
+        layout = QVBoxLayout()
+
+        # Title
+        title = QLabel("Trade Performance Analytics")
+        title_font = title.font()
+        title_font.setPointSize(14)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
+
+        # Get statistics
+        stats = trade_journal.get_statistics()
+
+        # Summary section
+        summary_group = QWidget()
+        summary_layout = QFormLayout()
+
+        # Trade counts
+        total = stats.get('total_trades', 0)
+        open_trades = stats.get('open_trades', 0)
+        closed = stats.get('closed_trades', 0)
+        winners = stats.get('winners', 0)
+        losers = stats.get('losers', 0)
+
+        summary_layout.addRow("Total Trades:", QLabel(str(total)))
+        summary_layout.addRow("Open Trades:", QLabel(str(open_trades)))
+        summary_layout.addRow("Closed Trades:", QLabel(str(closed)))
+        summary_layout.addRow("Winners:", QLabel(f"{winners} ({stats.get('win_rate', 0):.1f}%)"))
+        summary_layout.addRow("Losers:", QLabel(str(losers)))
+
+        summary_group.setLayout(summary_layout)
+        layout.addWidget(summary_group)
+
+        # P&L section
+        pnl_group = QWidget()
+        pnl_layout = QFormLayout()
+
+        total_pnl = stats.get('total_pnl', 0)
+        pnl_label = QLabel(f"${total_pnl:,.2f}")
+        if total_pnl > 0:
+            pnl_label.setStyleSheet("color: green; font-weight: bold;")
+        elif total_pnl < 0:
+            pnl_label.setStyleSheet("color: red; font-weight: bold;")
+
+        pnl_layout.addRow("Total P&L:", pnl_label)
+        pnl_layout.addRow("Avg P&L per Trade:", QLabel(f"${stats.get('avg_pnl', 0):,.2f}"))
+        pnl_layout.addRow("Avg Winner:", QLabel(f"${stats.get('avg_winner', 0):,.2f}"))
+        pnl_layout.addRow("Avg Loser:", QLabel(f"${stats.get('avg_loser', 0):,.2f}"))
+        pnl_layout.addRow("Best Trade:", QLabel(f"${stats.get('best_trade', 0):,.2f}"))
+        pnl_layout.addRow("Worst Trade:", QLabel(f"${stats.get('worst_trade', 0):,.2f}"))
+
+        pnl_group.setLayout(pnl_layout)
+        layout.addWidget(pnl_group)
+
+        # Risk metrics section
+        risk_group = QWidget()
+        risk_layout = QFormLayout()
+
+        pf = stats.get('profit_factor', 0)
+        if pf == float('inf'):
+            pf_text = "Infinite (no losses)"
+        else:
+            pf_text = f"{pf:.2f}"
+
+        risk_layout.addRow("Profit Factor:", QLabel(pf_text))
+        risk_layout.addRow("Avg R-Multiple:", QLabel(f"{stats.get('avg_r_multiple', 0):.2f}R"))
+
+        risk_group.setLayout(risk_layout)
+        layout.addWidget(risk_group)
+
+        # Export section
+        export_layout = QHBoxLayout()
+        btn_export_csv = QPushButton("Export to CSV")
+        btn_export_excel = QPushButton("Export to Excel")
+        export_layout.addWidget(btn_export_csv)
+        export_layout.addWidget(btn_export_excel)
+        export_layout.addStretch()
+        layout.addLayout(export_layout)
+
+        btn_export_csv.clicked.connect(lambda: self._export(trade_journal, 'csv'))
+        btn_export_excel.clicked.connect(lambda: self._export(trade_journal, 'excel'))
+
+        # Close button
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_close)
+        layout.addLayout(btn_layout)
+
+        self.setLayout(layout)
+
+    def _export(self, journal, format_type: str) -> None:
+        from PySide6.QtWidgets import QFileDialog
+        from pathlib import Path
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        if format_type == 'csv':
+            filepath, _ = QFileDialog.getSaveFileName(
+                self, "Export Trades to CSV",
+                f"trades_{timestamp}.csv",
+                "CSV Files (*.csv)"
+            )
+            if filepath:
+                if journal.export_to_csv(Path(filepath)):
+                    QMessageBox.information(self, "Export Complete", f"Trades exported to {filepath}")
+                else:
+                    QMessageBox.warning(self, "Export Failed", "No trades to export or error occurred.")
+        else:
+            filepath, _ = QFileDialog.getSaveFileName(
+                self, "Export Trades to Excel",
+                f"trades_{timestamp}.xlsx",
+                "Excel Files (*.xlsx)"
+            )
+            if filepath:
+                if journal.export_to_excel(Path(filepath)):
+                    QMessageBox.information(self, "Export Complete", f"Trades exported to {filepath}")
+                else:
+                    QMessageBox.warning(self, "Export Failed", "No trades to export or error occurred.\nNote: openpyxl package may be required for Excel export.")
+
+
 def format_trade_ticket_summary(plan: Dict[str, Any], cfg: Dict[str, Any]) -> str:
     symbol = plan.get("symbol", "—")
     mode = plan.get("mode", cfg.get("ibkr", {}).get("mode", "paper"))
+    direction = plan.get("direction", "Long")
     listing = plan.get("listing", {}) or {}
     exchange = listing.get("exchange", "SMART")
     currency = listing.get("currency", "USD")
@@ -686,12 +805,12 @@ def format_trade_ticket_summary(plan: Dict[str, Any], cfg: Dict[str, Any]) -> st
     max_loss_pct = float(cfg.get("risk", {}).get("max_loss_pct", rk.get("max_loss_pct", 0.005)))
 
     est_notional = float(rk.get("estimated_notional", qty * entry) or (qty * entry))
-    est_risk = float(rk.get("estimated_risk", qty * max(entry - stop, 0.0)) or (qty * max(entry - stop, 0.0)))
-    rps = max(entry - stop, 1e-6)
-    take_r = float(rk.get("take_r", (take - entry) / rps if rps > 0 else 0.0) or 0.0)
+    rps = float(lv.get("risk_per_share", abs(entry - stop)) or abs(entry - stop))
+    est_risk = float(rk.get("estimated_risk", qty * rps) or (qty * rps))
+    take_r = float(rk.get("take_r", 0.0) or 0.0)
 
     lines = []
-    lines.append(f"IBKRBot Trade Ticket ({mode.upper()})")
+    lines.append(f"IBKRBot Trade Ticket ({mode.upper()}) - {direction}")
     lines.append(f"Symbol: {symbol}   Exchange: {exchange}   Currency: {currency}")
     lines.append("")
     lines.append(f"ENTRY (LMT): {entry:.2f}")

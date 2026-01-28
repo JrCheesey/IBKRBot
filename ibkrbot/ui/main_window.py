@@ -7,11 +7,11 @@ from datetime import datetime, timezone
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QPushButton, QTextEdit, QComboBox, QSplitter, QMessageBox,
-    QTableWidget, QTableWidgetItem, QGroupBox, QSizePolicy,
-    QDoubleSpinBox, QSpinBox, QProgressBar, QStatusBar, QMenuBar, QMenu, QApplication, QDialog, QLineEdit
+    QTableWidget, QTableWidgetItem, QGroupBox, QSizePolicy, QCheckBox,
+    QDoubleSpinBox, QSpinBox, QProgressBar, QStatusBar, QMenuBar, QMenu, QApplication, QDialog, QLineEdit, QGridLayout
 )
-from PySide6.QtCore import Qt, QThread, QSettings, QUrl, QTimer
-from PySide6.QtGui import QDesktopServices, QFont, QPixmap, QAction, QKeySequence, QShortcut
+from PySide6.QtCore import Qt, QThread, QSettings, QUrl, QTimer, QEvent
+from PySide6.QtGui import QDesktopServices, QFont, QPixmap, QAction, QKeySequence, QShortcut, QKeyEvent
 import logging
 from pathlib import Path
 
@@ -29,7 +29,7 @@ from ..core.paths import ensure_subdirs, resource_path
 from ..core.visual.chart import save_thumbnail_from_plan
 from ..core.constants import Timeouts, OrderStatus
 from .logging_handler import QtLogEmitter, QtLogHandler
-from .dialogs import TradeTicketDialog, SettingsDialog, DiffDialog, compute_plan_diff, format_trade_ticket_summary
+from .dialogs import TradeTicketDialog, SettingsDialog, DiffDialog, PerformanceAnalyticsDialog, compute_plan_diff, format_trade_ticket_summary
 from .theme import Colors, Fonts, Styles, Spacing, ThemeMode, get_theme_manager, apply_theme
 
 # v1.0.2 feature imports
@@ -69,6 +69,11 @@ class MainWindow(QMainWindow):
         self._connection_check_timer.timeout.connect(self._check_connection_health)
         self._connection_check_timer.setInterval(30000)  # Check every 30 seconds
 
+        # Auto-backup draft timer (every 2 minutes)
+        self._auto_backup_timer = QTimer()
+        self._auto_backup_timer.timeout.connect(self._auto_backup_draft)
+        self._auto_backup_timer.start(120000)
+
         # v1.0.2 feature initialization
         self._sound_player = get_sound_player()
         self._trade_journal = get_trade_journal()
@@ -76,6 +81,16 @@ class MainWindow(QMainWindow):
         self._tray_manager = get_tray_manager()
         self._reconnect_manager = get_reconnect_manager()
         self._dark_mode_enabled = False
+
+        # Session statistics tracking
+        self._session_stats = {
+            "start_time": datetime.now(timezone.utc).isoformat(),
+            "proposals": 0,
+            "orders_placed": 0,
+            "orders_cancelled": 0,
+            "connections": 0,
+            "errors": 0,
+        }
 
         # Setup auto-reconnect callbacks
         self._setup_auto_reconnect()
@@ -90,12 +105,44 @@ class MainWindow(QMainWindow):
         self.symbol_combo = QComboBox()
         self._reload_symbol_combo(keep_current=False)
 
+        # Favorites button
+        self.btn_favorite = QPushButton("☆")
+        self.btn_favorite.setFixedWidth(30)
+        self.btn_favorite.setToolTip("Add/remove current symbol to favorites")
+        self.btn_favorite.clicked.connect(self._toggle_favorite)
+
+        # Show favorites only checkbox
+        self.cb_favorites_only = QCheckBox("Favorites")
+        self.cb_favorites_only.setToolTip("Show only favorite symbols")
+        self.cb_favorites_only.stateChanged.connect(self._on_favorites_filter_changed)
+
         # Mode selector (Paper/Live)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["paper", "live"])
         current_mode = self.cfg.get("ibkr", {}).get("mode", "paper")
         self.mode_combo.setCurrentText(current_mode)
         self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
+
+        # Direction selector (Long/Short) - made intuitive for beginners
+        self.direction_combo = QComboBox()
+        self.direction_combo.addItem("Long (Buy)", "Long")
+        self.direction_combo.addItem("Short (Sell)", "Short")
+        self.direction_combo.setCurrentIndex(0)
+        self.direction_combo.setToolTip(
+            "Trade Direction:\n\n"
+            "LONG (Buy) - You expect the price to GO UP\n"
+            "  • Buy shares now at a lower price\n"
+            "  • Sell later at a higher price for profit\n\n"
+            "SHORT (Sell) - You expect the price to GO DOWN\n"
+            "  • Borrow and sell shares now at a higher price\n"
+            "  • Buy back later at a lower price for profit"
+        )
+        self.direction_combo.currentIndexChanged.connect(self._on_direction_changed)
+
+        # Direction explanation label
+        self.direction_hint = QLabel("")
+        self.direction_hint.setStyleSheet("font-size: 11px; padding: 2px 5px; border-radius: 3px;")
+        self._update_direction_style()
 
         # Style the mode combo based on selection
         self._update_mode_combo_style()
@@ -179,15 +226,24 @@ class MainWindow(QMainWindow):
         self.qty_spin   = QSpinBox(); self.qty_spin.setMaximum(10_000_000); self.qty_spin.setValue(0)
 
         self.entry_spin.setToolTip("Limit entry price suggested by the strategy. You can override it before saving/placing.")
-        self.stop_spin.setToolTip("Stop price. Must be below entry for a long bracket.")
+        self.stop_spin.setToolTip("Stop price. Must be below entry for a long bracket, above for short.")
         self.take_spin.setToolTip("Take profit price. Typically based on an R-multiple (e.g., 2R).")
         self.qty_spin.setToolTip("Share quantity. If you override, risk checks will warn if limits are exceeded.")
+
+        # Install event filter on spin boxes to suppress system beep on invalid key press
+        for spin in [self.entry_spin, self.stop_spin, self.take_spin, self.qty_spin]:
+            spin.installEventFilter(self)
 
         self.lbl_atr = QLabel("—"); self.lbl_atr.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.lbl_netliq = QLabel("—"); self.lbl_netliq.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.lbl_est_notional = QLabel("—"); self.lbl_est_notional.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.lbl_est_risk = QLabel("—"); self.lbl_est_risk.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.lbl_take_r = QLabel("—"); self.lbl_take_r.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # P&L estimate labels
+        self.lbl_potential_profit = QLabel("—"); self.lbl_potential_profit.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.lbl_potential_profit.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        self.lbl_potential_loss = QLabel("—"); self.lbl_potential_loss.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.lbl_potential_loss.setStyleSheet("color: #F44336; font-weight: bold;")
 
         # Unsaved edits indicator
         self.unsaved_label = QLabel("")
@@ -231,6 +287,8 @@ class MainWindow(QMainWindow):
         self.preview_form.addRow("Est Notional:", self.lbl_est_notional)
         self.preview_form.addRow("Est Risk ($):", self.lbl_est_risk)
         self.preview_form.addRow("Take R:", self.lbl_take_r)
+        self.preview_form.addRow("Potential Profit:", self.lbl_potential_profit)
+        self.preview_form.addRow("Potential Loss:", self.lbl_potential_loss)
         self.preview_form.addRow(self.unsaved_label)
         self.preview_form.addRow(self.pb_notional)
         self.preview_form.addRow(self.pb_loss)
@@ -252,16 +310,27 @@ class MainWindow(QMainWindow):
         self.positions_table.setHorizontalHeaderLabels(["Symbol","Position","AvgCost","Currency"])
         self.positions_table.setAlternatingRowColors(True)
 
+        # Recent trades history table with P&L colors
+        self.trades_table = QTableWidget(0, 6)
+        self.trades_table.setHorizontalHeaderLabels(["Time", "Symbol", "Side", "Qty", "P&L", "R"])
+        self.trades_table.setAlternatingRowColors(True)
+        self.trades_table.setToolTip("Recent completed trades. Green = profit, Red = loss")
+        self._refresh_trades_table()
+
         orders_box = QGroupBox("Orders")
         vb1 = QVBoxLayout(); vb1.addWidget(self.orders_table); orders_box.setLayout(vb1)
 
         pos_box = QGroupBox("Positions")
         vb2 = QVBoxLayout(); vb2.addWidget(self.positions_table); pos_box.setLayout(vb2)
 
+        trades_box = QGroupBox("Recent Trades (P&L)")
+        vb3 = QVBoxLayout(); vb3.addWidget(self.trades_table); trades_box.setLayout(vb3)
+
         right_split = QSplitter(Qt.Vertical)
         right_split.addWidget(orders_box)
         right_split.addWidget(pos_box)
-        right_split.setSizes([320, 160])
+        right_split.addWidget(trades_box)
+        right_split.setSizes([250, 120, 150])
 
         # --- Logs ---
         self.log_view = QTextEdit()
@@ -273,6 +342,12 @@ class MainWindow(QMainWindow):
         top_layout = QHBoxLayout()
         top_layout.addWidget(QLabel("Symbol:"))
         top_layout.addWidget(self.symbol_combo)
+        top_layout.addWidget(self.btn_favorite)
+        top_layout.addWidget(self.cb_favorites_only)
+        top_layout.addSpacing(10)
+        top_layout.addWidget(QLabel("Direction:"))
+        top_layout.addWidget(self.direction_combo)
+        top_layout.addWidget(self.direction_hint)
         top_layout.addSpacing(15)
         top_layout.addWidget(QLabel("Mode:"))
         top_layout.addWidget(self.mode_combo)
@@ -341,8 +416,18 @@ class MainWindow(QMainWindow):
         self.task_spinner.setFixedWidth(120)
         self.task_spinner.hide()
 
+        # Market hours indicator
+        self.market_status = QLabel("Market: —")
+        self.market_status.setToolTip("US market hours (Eastern Time)")
+        self._update_market_status()
+        # Timer to update market status every minute
+        self._market_timer = QTimer()
+        self._market_timer.timeout.connect(self._update_market_status)
+        self._market_timer.start(60000)
+
         self.status.addWidget(self.conn_dot)
         self.status.addWidget(self.conn_text)
+        self.status.addWidget(self.market_status)
         self.status.addPermanentWidget(self.task_text, 1)
         self.status.addPermanentWidget(self.task_spinner)
 
@@ -376,7 +461,7 @@ class MainWindow(QMainWindow):
         self.qty_spin.valueChanged.connect(lambda _v: self._on_preview_edited())
 
         self.runner.busy_changed.connect(self._on_busy_changed)
-        self.symbol_combo.currentTextChanged.connect(lambda _s: self._sync_preview_from_latest())
+        self.symbol_combo.currentTextChanged.connect(lambda _s: (self._sync_preview_from_latest(), self._update_favorite_button()))
 
         # --- Keyboard shortcuts ---
         self._setup_shortcuts()
@@ -443,6 +528,14 @@ class MainWindow(QMainWindow):
         act_alerts = QAction("Price Alerts...", self)
         act_alerts.triggered.connect(self._show_alerts)
         m_view.addAction(act_alerts)
+
+        act_stats = QAction("Trade Statistics...", self)
+        act_stats.triggered.connect(self._show_trade_stats)
+        m_view.addAction(act_stats)
+
+        act_session = QAction("Session Statistics...", self)
+        act_session.triggered.connect(self._show_session_stats)
+        m_view.addAction(act_session)
 
         m_view.addSeparator()
 
@@ -921,13 +1014,40 @@ class MainWindow(QMainWindow):
                 idx = self.symbol_combo.findText(str(sym))
                 if idx >= 0:
                     self.symbol_combo.setCurrentIndex(idx)
+            # Restore sound setting
+            sound_enabled = self._settings.value("sound_enabled", True, type=bool)
+            self._sound_player.enabled = sound_enabled
+            self.act_sound.setChecked(sound_enabled)
+            # Restore minimize to tray setting
+            tray_enabled = self._settings.value("minimize_to_tray", False, type=bool)
+            if tray_enabled and self._tray_manager.is_available:
+                self._tray_manager.set_minimize_to_tray(True)
+                self._setup_tray_icon()
+                self.act_tray.setChecked(True)
         except Exception:
             pass
 
     def _save_settings(self) -> None:
         try:
             self._settings.setValue("geometry", self.saveGeometry())
-            self._settings.setValue("last_symbol", self.symbol_combo.currentText().strip())
+            self._settings.setValue("last_symbol", self._get_current_symbol())
+        except Exception:
+            pass
+
+    def _auto_backup_draft(self) -> None:
+        if not self._draft_plan:
+            return
+        try:
+            import json
+            backup_path = self._paths["root"] / "draft_backup.json"
+            pv = self._compute_preview()
+            backup_plan = copy.deepcopy(self._draft_plan)
+            backup_plan["levels"]["entry_limit"] = pv["entry"]
+            backup_plan["levels"]["stop"] = pv["stop"]
+            backup_plan["levels"]["take_profit"] = pv["take"]
+            backup_plan["risk"]["qty"] = pv["qty"]
+            backup_plan["_backup_time"] = _ts_now()
+            backup_path.write_text(json.dumps(backup_plan, indent=2), encoding="utf-8")
         except Exception:
             pass
 
@@ -962,16 +1082,124 @@ class MainWindow(QMainWindow):
 
     # --------------------- Symbol reload ---------------------
     def _reload_symbol_combo(self, keep_current: bool = True) -> None:
-        cur = self.symbol_combo.currentText().strip() if keep_current else ""
+        cur = self._get_current_symbol() if (keep_current and hasattr(self, '_symbol_data')) else ""
         self.symbol_combo.blockSignals(True)
         self.symbol_combo.clear()
-        for s in self.cfg.get("symbols", []):
-            self.symbol_combo.addItem(s["symbol"])
+
+        # Store symbol data for tooltips
+        self._symbol_data = {}
+
+        # Get favorites filter
+        favorites_only = hasattr(self, 'cb_favorites_only') and self.cb_favorites_only.isChecked()
+        favs = self._get_favorites() if favorites_only else None
+
+        # Group symbols by category
+        symbols = self.cfg.get("symbols", [])
+        categories = {}
+        for s in symbols:
+            sym_name = s["symbol"]
+            # Skip if favorites filter is on and not in favorites
+            if favs is not None and sym_name not in favs:
+                continue
+            cat = s.get("category", "Other")
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append(s)
+
+        # Add symbols grouped by category with separators
+        category_order = [
+            "1. Low Risk", "2. Low-Medium Risk", "3. Medium Risk",
+            "4. Medium-High Risk", "5. High Risk", "6. Very High Risk",
+            "7. Extreme Risk", "Other"
+        ]
+
+        for cat in category_order:
+            if cat in categories:
+                # Add category header as disabled item
+                self.symbol_combo.addItem(f"─ {cat} ─")
+                idx = self.symbol_combo.count() - 1
+                self.symbol_combo.model().item(idx).setEnabled(False)
+
+                for s in categories[cat]:
+                    sym_name = s["symbol"]
+                    risk = s.get("risk", "Unknown")
+                    desc = s.get("description", "")
+                    self.symbol_combo.addItem(sym_name)
+                    self._symbol_data[sym_name] = s
+                    item_idx = self.symbol_combo.count() - 1
+                    self.symbol_combo.setItemData(item_idx, f"[{risk} Risk] {desc}", Qt.ToolTipRole)
+
         if cur:
             idx = self.symbol_combo.findText(cur)
             if idx >= 0:
                 self.symbol_combo.setCurrentIndex(idx)
         self.symbol_combo.blockSignals(False)
+        # Update favorite button state
+        if hasattr(self, 'btn_favorite'):
+            self._update_favorite_button()
+
+        # Connect to update main tooltip when selection changes (only once)
+        if not hasattr(self, '_tooltip_connected'):
+            self.symbol_combo.currentTextChanged.connect(self._update_symbol_tooltip)
+            self._tooltip_connected = True
+        self._update_symbol_tooltip()
+
+    def _refresh_trades_table(self) -> None:
+        """Refresh the recent trades table with color-coded P&L."""
+        from PySide6.QtGui import QColor, QBrush
+
+        # Only show closed trades (not cancelled or open)
+        all_trades = self._trade_journal.get_all_trades()
+        trades = [t for t in all_trades if t.status == "closed"][:20]
+        self.trades_table.setRowCount(len(trades))
+
+        for row, trade in enumerate(trades):
+            # Determine colors based on P&L
+            pnl = trade.realized_pnl or 0
+            if pnl > 0:
+                bg_color = QColor("#E8F5E9")  # Light green
+                pnl_color = QColor("#2E7D32")  # Dark green
+                indicator = "✓"
+            elif pnl < 0:
+                bg_color = QColor("#FFEBEE")  # Light red
+                pnl_color = QColor("#C62828")  # Dark red
+                indicator = "✗"
+            else:
+                bg_color = QColor("#FFFFFF")
+                pnl_color = QColor("#666666")
+                indicator = "—"
+
+            # Format time
+            try:
+                time_str = trade.entry_time[:16] if trade.entry_time else "—"
+            except:
+                time_str = "—"
+
+            items = [
+                QTableWidgetItem(time_str),
+                QTableWidgetItem(trade.symbol),
+                QTableWidgetItem(trade.side.upper() if trade.side else "—"),
+                QTableWidgetItem(str(trade.quantity)),
+                QTableWidgetItem(f"{indicator} ${pnl:+,.2f}"),
+                QTableWidgetItem(f"{trade.r_multiple:.1f}R" if trade.r_multiple else "—"),
+            ]
+
+            for col, item in enumerate(items):
+                item.setBackground(QBrush(bg_color))
+                if col == 4:  # P&L column
+                    item.setForeground(QBrush(pnl_color))
+                self.trades_table.setItem(row, col, item)
+
+        self.trades_table.resizeColumnsToContents()
+
+    def _update_symbol_tooltip(self) -> None:
+        sym = self._get_current_symbol()
+        if hasattr(self, '_symbol_data') and sym in self._symbol_data:
+            s = self._symbol_data[sym]
+            risk = s.get("risk", "Unknown")
+            desc = s.get("description", "No description")
+            cat = s.get("category", "Other")
+            self.symbol_combo.setToolTip(f"<b>{sym}</b> [{cat}]<br><b>Risk:</b> {risk}<br>{desc}")
 
     # --------------------- UI state + helpers ---------------------
     def _on_busy_changed(self, busy: bool) -> None:
@@ -998,15 +1226,27 @@ class MainWindow(QMainWindow):
         self.btn_save_draft_edits.setEnabled(has_draft and self._has_unsaved_edits())
         self.btn_copy_ticket.setEnabled(has_draft)
 
+    def _get_current_symbol(self) -> str:
+        """Get the clean symbol name from the combo box (strips category prefixes)."""
+        raw = self.symbol_combo.currentText().strip()
+        # Skip category headers (they start with "──")
+        if raw.startswith("──"):
+            return ""
+        return raw
+
     def _current_symbol_cfg(self) -> Dict[str, Any]:
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
+        # Check in cached symbol data first
+        if hasattr(self, '_symbol_data') and sym in self._symbol_data:
+            return self._symbol_data[sym]
+        # Fallback to config search
         for s in self.cfg.get("symbols", []):
             if s["symbol"] == sym:
                 return s
         return {"symbol": sym, "exchange": "SMART", "currency": "USD"}
 
     def _sync_preview_from_latest(self) -> None:
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         p = latest_plan(sym, "draft")
         self._draft_plan = None
         self._draft_baseline = None
@@ -1044,6 +1284,7 @@ class MainWindow(QMainWindow):
         self.risk_banner.hide()
         self.chart_label.setText('(chart will appear after Propose)')
         self.chart_label.setPixmap(QPixmap())
+        self.preview_box.setTitle("Proposal Preview (Draft)")
 
     def _risk_limits(self) -> Tuple[float, float, float, float, float]:
         net_liq = 0.0
@@ -1066,20 +1307,56 @@ class MainWindow(QMainWindow):
         stop = float(self.stop_spin.value())
         take = float(self.take_spin.value())
         qty = int(self.qty_spin.value())
-        rps = max(entry - stop, 1e-6)
+        direction = self.direction_combo.currentData() or "Long"
+        # For short: stop > entry, so risk = stop - entry
+        # For long: entry > stop, so risk = entry - stop
+        if direction == "Short":
+            rps = max(stop - entry, 1e-6)
+            est_risk = qty * max(stop - entry, 0.0)
+            take_r = (entry - take) / rps if rps > 0 else 0.0
+        else:
+            rps = max(entry - stop, 1e-6)
+            est_risk = qty * max(entry - stop, 0.0)
+            take_r = (take - entry) / rps if rps > 0 else 0.0
         est_notional = qty * entry
-        est_risk = qty * max(entry - stop, 0.0)
-        take_r = (take - entry) / rps if rps > 0 else 0.0
-        return {"entry": entry, "stop": stop, "take": take, "qty": qty, "rps": rps, "est_notional": est_notional, "est_risk": est_risk, "take_r": take_r}
+        # Calculate potential profit/loss
+        if direction == "Short":
+            potential_profit = qty * max(entry - take, 0.0)
+            potential_loss = qty * max(stop - entry, 0.0)
+        else:
+            potential_profit = qty * max(take - entry, 0.0)
+            potential_loss = qty * max(entry - stop, 0.0)
+        return {"entry": entry, "stop": stop, "take": take, "qty": qty, "rps": rps, "est_notional": est_notional, "est_risk": est_risk, "take_r": take_r, "potential_profit": potential_profit, "potential_loss": potential_loss}
+
+    def _update_market_status(self) -> None:
+        from ..core.constants import MarketHours
+        is_open, msg = MarketHours.is_open()
+        is_ext, ext_msg = MarketHours.is_extended()
+        if is_open:
+            self.market_status.setText("Market: OPEN")
+            self.market_status.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        elif is_ext:
+            self.market_status.setText(f"Market: {ext_msg}")
+            self.market_status.setStyleSheet("color: #FF9800; font-weight: bold;")
+        else:
+            self.market_status.setText(f"Market: {msg}")
+            self.market_status.setStyleSheet("color: #F44336;")
 
     def _update_gauges(self) -> None:
         if not self._draft_plan:
             self.pb_notional.setValue(0); self.pb_notional.setFormat("Notional usage: —")
             self.pb_loss.setValue(0); self.pb_loss.setFormat("Loss usage: —")
+            self.lbl_potential_profit.setText("—")
+            self.lbl_potential_loss.setText("—")
             return
 
         pv = self._compute_preview()
         net_liq, max_notional_pct, max_loss_pct, max_notional, max_loss = self._risk_limits()
+
+        # Update P&L estimates
+        self.lbl_potential_profit.setText(f"+${pv['potential_profit']:,.2f}")
+        self.lbl_potential_loss.setText(f"-${pv['potential_loss']:,.2f}")
+
         if net_liq <= 0 or max_notional <= 0 or max_loss <= 0:
             self.pb_notional.setValue(0); self.pb_notional.setFormat("Notional usage: —")
             self.pb_loss.setValue(0); self.pb_loss.setFormat("Loss usage: —")
@@ -1174,6 +1451,20 @@ class MainWindow(QMainWindow):
         self.take_spin.setValue(take)
         self.qty_spin.setValue(qty)
 
+        # Update direction combo to match loaded plan
+        direction = plan.get("direction", "Long")
+        self.direction_combo.blockSignals(True)
+        # Find index by data value
+        for i in range(self.direction_combo.count()):
+            if self.direction_combo.itemData(i) == direction:
+                self.direction_combo.setCurrentIndex(i)
+                break
+        self.direction_combo.blockSignals(False)
+        self._update_direction_style()
+
+        # Update preview box title to show direction
+        self.preview_box.setTitle(f"Proposal Preview (Draft - {direction})")
+
         self.lbl_atr.setText(f"{float(plan['levels'].get('atr',0.0) or 0.0):.4f}")
         self.lbl_netliq.setText(f"{float(plan['risk'].get('net_liq',0.0) or 0.0):,.2f}")
         self._on_preview_edited()
@@ -1198,7 +1489,7 @@ class MainWindow(QMainWindow):
 
     # --------------------- Workflow logic ---------------------
     def _update_workflow(self) -> None:
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         connected = self.ib.isConnected()
         has_draft = self._draft_plan is not None
         unsaved = self._has_unsaved_edits()
@@ -1270,6 +1561,7 @@ class MainWindow(QMainWindow):
 
         # Update connection status indicator FIRST (before any potentially failing operations)
         self.logger.info("Connected. NetLiq=%.2f mode=%s", self._net_liq, mode)
+        self._session_stats["connections"] += 1
         # Use bright green that's visible in both light and dark mode
         self.conn_dot.setStyleSheet("color: #00ff00; font-size: 16px;")
         self.conn_text.setText(f"Connected ({mode_display})")
@@ -1312,10 +1604,11 @@ class MainWindow(QMainWindow):
         if not self._require_connected():
             return
         symbol_cfg = self._current_symbol_cfg()
+        direction = (self.direction_combo.currentData() or "Long").lower()  # "long" or "short"
 
         def work(ctx):
             net_liq = self.ib.get_net_liq(timeout=Timeouts.IBKR_STANDARD)
-            plan = propose_swing_plan(ctx, symbol_cfg, self.cfg, net_liq)
+            plan = propose_swing_plan(ctx, symbol_cfg, self.cfg, net_liq, direction=direction)
             path = save_plan(plan, "draft")
             return {"plan": plan, "draft_path": str(path)}
 
@@ -1326,9 +1619,10 @@ class MainWindow(QMainWindow):
             self._show_plan(r["plan"])
             self.last_proposal_label.setText(f"Last proposal: {r['plan'].get('created_at','—')}")
             self.logger.info("Draft saved: %s", r["draft_path"])
+            self._session_stats["proposals"] += 1
             self._update_workflow()
         task.signals.finished.connect(_done)
-        task.signals.error.connect(lambda e: QMessageBox.warning(self, "Propose failed", e))
+        task.signals.error.connect(lambda e: (self._session_stats.__setitem__("errors", self._session_stats["errors"] + 1), QMessageBox.warning(self, "Propose failed", e)))
         self.runner.start(task)
 
     def _require_override_confirm_if_over(self, action_name: str) -> bool:
@@ -1341,7 +1635,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_save_draft_edits(self) -> None:
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         draft_p = latest_plan(sym, "draft")
         if not draft_p:
             QMessageBox.warning(self, "No draft", "No draft plan found. Click Propose first.")
@@ -1361,21 +1655,37 @@ class MainWindow(QMainWindow):
 
         pv = self._compute_preview()
         entry = pv["entry"]; stop = pv["stop"]; take = pv["take"]; qty = pv["qty"]
+        direction = plan.get("direction", "Long")
 
         if qty <= 0 or entry <= 0 or stop <= 0 or take <= 0:
             QMessageBox.warning(self, "Invalid values", "Entry/Stop/Take must be > 0 and Qty must be > 0.")
             return
-        if stop >= entry:
-            QMessageBox.warning(self, "Invalid stop", "Stop must be below entry for a long bracket.")
-            return
+
+        # Validate price relationships based on direction
+        if direction == "Short":
+            if stop <= entry:
+                QMessageBox.warning(self, "Invalid stop", "Stop must be above entry for a short bracket.")
+                return
+            if take >= entry:
+                QMessageBox.warning(self, "Invalid take", "Take profit must be below entry for a short bracket.")
+                return
+            rps = max(stop - entry, 1e-6)
+        else:
+            if stop >= entry:
+                QMessageBox.warning(self, "Invalid stop", "Stop must be below entry for a long bracket.")
+                return
+            if take <= entry:
+                QMessageBox.warning(self, "Invalid take", "Take profit must be above entry for a long bracket.")
+                return
+            rps = max(entry - stop, 1e-6)
 
         plan["levels"]["entry_limit"] = round(entry, 2)
         plan["levels"]["stop"] = round(stop, 2)
         plan["levels"]["take_profit"] = round(take, 2)
-        plan["levels"]["risk_per_share"] = max(entry - stop, 1e-6)
+        plan["levels"]["risk_per_share"] = rps
         plan["risk"]["qty"] = int(qty)
         plan["risk"]["estimated_notional"] = float(qty) * entry
-        plan["risk"]["estimated_risk"] = float(qty) * max(entry - stop, 0.0)
+        plan["risk"]["estimated_risk"] = float(qty) * rps
         plan["risk"]["take_r"] = pv["take_r"]
         plan["status"]["draft"] = True
         plan["status"]["placed"] = False
@@ -1419,7 +1729,7 @@ class MainWindow(QMainWindow):
             plan.setdefault("risk", {})
             plan["risk"]["qty"] = int(qty)
 
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         if sym and not plan.get("symbol"):
             plan["symbol"] = sym
 
@@ -1450,7 +1760,7 @@ class MainWindow(QMainWindow):
             if reply != QMessageBox.Yes:
                 return
 
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         draft = latest_plan(sym, "draft")
         if not draft:
             QMessageBox.warning(self, "No draft", "Propose first to create a draft plan.")
@@ -1464,6 +1774,51 @@ class MainWindow(QMainWindow):
             return
 
         self._draft_plan = plan
+
+        # Price validation before confirm
+        levels = plan.get("levels", {})
+        entry = float(levels.get("entry_limit", 0))
+        stop = float(levels.get("stop", 0))
+        take = float(levels.get("take_profit", 0))
+        last_close = float(levels.get("last_close", 0))
+        direction = plan.get("direction", "Long")
+
+        if entry <= 0 or stop <= 0 or take <= 0:
+            QMessageBox.warning(self, "Invalid Prices", "Entry, stop, and take prices must all be positive.")
+            return
+
+        # Validate price relationships
+        if direction == "Long":
+            if not (stop < entry < take):
+                QMessageBox.warning(
+                    self, "Invalid Price Levels",
+                    f"For a Long position, prices must follow: stop < entry < take\n\n"
+                    f"Current: stop ({stop:.2f}) < entry ({entry:.2f}) < take ({take:.2f})"
+                )
+                return
+        else:  # Short
+            if not (take < entry < stop):
+                QMessageBox.warning(
+                    self, "Invalid Price Levels",
+                    f"For a Short position, prices must follow: take < entry < stop\n\n"
+                    f"Current: take ({take:.2f}) < entry ({entry:.2f}) < stop ({stop:.2f})"
+                )
+                return
+
+        # Warn if entry is far from last close
+        if last_close > 0:
+            pct_diff = abs(entry - last_close) / last_close * 100
+            if pct_diff > 10:
+                reply = QMessageBox.question(
+                    self,
+                    "Entry Price Warning",
+                    f"Entry price ({entry:.2f}) is {pct_diff:.1f}% away from last close ({last_close:.2f}).\n\n"
+                    "This may indicate stale data or an unusual entry.\n\nContinue anyway?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
+                    return
 
         if self._has_unsaved_edits():
             if not self._confirm("Unsaved edits", "You have unsaved draft edits. Place will use the saved draft file, not the unsaved values.\n\nContinue anyway?"):
@@ -1502,13 +1857,14 @@ class MainWindow(QMainWindow):
 
             # Play order placed sound
             self._sound_player.play(SOUND_ORDER_FILLED)
+            self._session_stats["orders_placed"] += 1
 
             # Log to trade journal
             placed_plan = r.get("plan", {})
             try:
                 self._trade_journal.add_trade(
                     symbol=placed_plan.get("symbol", ""),
-                    side=placed_plan.get("side", "long"),
+                    side=placed_plan.get("direction", "Long").lower(),
                     entry_price=placed_plan.get("levels", {}).get("entry_limit", 0),
                     quantity=placed_plan.get("risk", {}).get("qty", 0),
                     stop_price=placed_plan.get("levels", {}).get("stop"),
@@ -1651,6 +2007,9 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem(str(v))
                 self.positions_table.setItem(r, c, item)
 
+        # Refresh trades history
+        self._refresh_trades_table()
+
         self._last_refresh_at = datetime.now(timezone.utc)
         self._log(f"Refreshed: {len(orders)} open orders, {len(positions)} positions")
         self._update_workflow()
@@ -1658,7 +2017,7 @@ class MainWindow(QMainWindow):
     def _on_cancel_symbol(self) -> None:
         if not self._require_connected():
             return
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         if not self._confirm("Confirm Cancel", f"Cancel all open orders for {sym}?"):
             return
 
@@ -1669,6 +2028,7 @@ class MainWindow(QMainWindow):
         self._wire_task_logs(task)
         def _done(r):
             QMessageBox.information(self, "Cancel", f"Attempted: {r['attempted']}\nCancel requests sent: {r['cancelled']}\n\nRefreshing orders next…")
+            self._session_stats["orders_cancelled"] += r.get("cancelled", 0)
             self._has_open_bracket = None
             self._update_workflow()
             self._on_refresh()
@@ -1694,14 +2054,18 @@ class MainWindow(QMainWindow):
 
         task = Task("Cancel All", work)
         self._wire_task_logs(task)
-        task.signals.finished.connect(lambda r: (QMessageBox.information(self, "Cancel All", f"Cancel requests sent for {r['active']} active orders. Refreshing next…"), self._on_refresh()))
+        def _cancel_all_done(r):
+            self._session_stats["orders_cancelled"] += r.get("active", 0)
+            QMessageBox.information(self, "Cancel All", f"Cancel requests sent for {r['active']} active orders. Refreshing next…")
+            self._on_refresh()
+        task.signals.finished.connect(_cancel_all_done)
         task.signals.error.connect(lambda e: QMessageBox.warning(self, "Cancel all failed", e))
         self.runner.start(task)
 
     def _on_janitor(self) -> None:
         if not self._require_connected():
             return
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         if not self._confirm("Run Janitor", f"Run janitor checks for {sym}?"):
             return
 
@@ -1759,7 +2123,7 @@ class MainWindow(QMainWindow):
         self._update_workflow()
 
     def _on_view_plan(self) -> None:
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         draft_p = latest_plan(sym, "draft")
         placed_p = latest_plan(sym, "placed")
 
@@ -1807,7 +2171,7 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _on_compare_plans(self) -> None:
-        sym = self.symbol_combo.currentText().strip()
+        sym = self._get_current_symbol()
         draft_p = latest_plan(sym, "draft")
         placed_p = latest_plan(sym, "placed")
         if not (draft_p and draft_p.exists()):
@@ -1874,13 +2238,106 @@ class MainWindow(QMainWindow):
         self.logger.info(f"Dark mode {'enabled' if checked else 'disabled'}")
 
     def _toggle_sound(self, checked: bool) -> None:
-        """Toggle sound notifications."""
         self._sound_player.enabled = checked
+        self._settings.setValue("sound_enabled", checked)
         self.logger.info(f"Sound notifications {'enabled' if checked else 'disabled'}")
 
+    def _get_favorites(self) -> list:
+        favs = self._settings.value("favorite_symbols", [])
+        return favs if isinstance(favs, list) else []
+
+    def _save_favorites(self, favs: list) -> None:
+        self._settings.setValue("favorite_symbols", favs)
+
+    def _toggle_favorite(self) -> None:
+        symbol = self._get_current_symbol()
+        if not symbol:
+            return
+        favs = self._get_favorites()
+        if symbol in favs:
+            favs.remove(symbol)
+            self.btn_favorite.setText("☆")
+            self.logger.info(f"Removed {symbol} from favorites")
+        else:
+            favs.append(symbol)
+            self.btn_favorite.setText("★")
+            self.logger.info(f"Added {symbol} to favorites")
+        self._save_favorites(favs)
+        if self.cb_favorites_only.isChecked():
+            self._reload_symbol_combo(keep_current=True)
+
+    def _on_favorites_filter_changed(self, state: int) -> None:
+        self._reload_symbol_combo(keep_current=True)
+        self._update_favorite_button()
+
+    def _update_favorite_button(self) -> None:
+        symbol = self._get_current_symbol()
+        favs = self._get_favorites()
+        if symbol and symbol in favs:
+            self.btn_favorite.setText("★")
+        else:
+            self.btn_favorite.setText("☆")
+
+    def eventFilter(self, obj, event) -> bool:
+        """Filter key events to suppress system beep on invalid keys in spin boxes."""
+        if event.type() == QEvent.Type.KeyPress:
+            # Check if this is a spin box
+            if isinstance(obj, (QDoubleSpinBox, QSpinBox)):
+                key = event.key()
+                text = event.text()
+                # Allow: digits, minus, plus, period, backspace, delete, arrows, tab, enter
+                allowed_keys = {
+                    Qt.Key.Key_0, Qt.Key.Key_1, Qt.Key.Key_2, Qt.Key.Key_3, Qt.Key.Key_4,
+                    Qt.Key.Key_5, Qt.Key.Key_6, Qt.Key.Key_7, Qt.Key.Key_8, Qt.Key.Key_9,
+                    Qt.Key.Key_Minus, Qt.Key.Key_Plus, Qt.Key.Key_Period, Qt.Key.Key_Comma,
+                    Qt.Key.Key_Backspace, Qt.Key.Key_Delete, Qt.Key.Key_Left, Qt.Key.Key_Right,
+                    Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_Home, Qt.Key.Key_End,
+                    Qt.Key.Key_Tab, Qt.Key.Key_Backtab, Qt.Key.Key_Return, Qt.Key.Key_Enter,
+                    Qt.Key.Key_Escape
+                }
+                # If it's a letter key that's not allowed, silently ignore it
+                if key not in allowed_keys and text.isalpha():
+                    return True  # Consume the event to prevent system beep
+        return super().eventFilter(obj, event)
+
+    def _on_direction_changed(self, index: int) -> None:
+        """Handle direction change (Long/Short)."""
+        direction = self.direction_combo.itemData(index) or "Long"
+        self.logger.info(f"Direction changed to: {direction}")
+        self._update_direction_style()
+        # Clear draft plan when direction changes since levels would be different
+        if self._draft_plan is not None:
+            self._draft_plan = None
+            self._draft_baseline = None
+            self._clear_preview()
+            self._update_workflow()
+            self.logger.info("Draft cleared due to direction change. Click Propose to generate new plan.")
+
+    def _update_direction_style(self) -> None:
+        """Update direction combo and hint styling based on selection."""
+        direction = self.direction_combo.currentData() or "Long"
+        if direction == "Long":
+            self.direction_hint.setText("Expecting price UP")
+            self.direction_hint.setStyleSheet(
+                "font-size: 11px; padding: 2px 6px; border-radius: 3px; "
+                "background-color: #e8f5e9; color: #2e7d32; font-weight: bold;"
+            )
+            self.direction_combo.setStyleSheet(
+                "QComboBox { background-color: #e8f5e9; color: #2e7d32; font-weight: bold; }"
+            )
+        else:
+            self.direction_hint.setText("Expecting price DOWN")
+            self.direction_hint.setStyleSheet(
+                "font-size: 11px; padding: 2px 6px; border-radius: 3px; "
+                "background-color: #ffebee; color: #c62828; font-weight: bold;"
+            )
+            self.direction_combo.setStyleSheet(
+                "QComboBox { background-color: #ffebee; color: #c62828; font-weight: bold; }"
+            )
+
     def _toggle_minimize_to_tray(self, checked: bool) -> None:
-        """Toggle minimize to tray behavior."""
         self._tray_manager.set_minimize_to_tray(checked)
+        self._settings.setValue("minimize_to_tray", checked)
         if checked and self._tray_manager.is_available:
             self._setup_tray_icon()
         self.logger.info(f"Minimize to tray {'enabled' if checked else 'disabled'}")
@@ -1974,8 +2431,39 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Export Failed", "Failed to export trades.")
 
+    def _show_trade_stats(self) -> None:
+        """Show performance analytics dialog with export options."""
+        dlg = PerformanceAnalyticsDialog(self._trade_journal, self)
+        dlg.exec()
+
+    def _show_session_stats(self) -> None:
+        """Show current session statistics."""
+        from datetime import datetime, timezone
+
+        start_time = self._session_stats.get("start_time", "")
+        try:
+            start_dt = datetime.fromisoformat(start_time)
+            duration = datetime.now(timezone.utc) - start_dt
+            hours = int(duration.total_seconds() // 3600)
+            minutes = int((duration.total_seconds() % 3600) // 60)
+            duration_str = f"{hours}h {minutes}m"
+        except:
+            duration_str = "Unknown"
+
+        stats_text = (
+            f"Session Statistics\n"
+            f"{'=' * 30}\n\n"
+            f"Session Duration: {duration_str}\n"
+            f"Connections: {self._session_stats.get('connections', 0)}\n"
+            f"Proposals Generated: {self._session_stats.get('proposals', 0)}\n"
+            f"Orders Placed: {self._session_stats.get('orders_placed', 0)}\n"
+            f"Orders Cancelled: {self._session_stats.get('orders_cancelled', 0)}\n"
+            f"Errors: {self._session_stats.get('errors', 0)}\n"
+        )
+
+        QMessageBox.information(self, "Session Statistics", stats_text)
+
     def _show_alerts(self) -> None:
-        """Show alerts management dialog."""
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QHBoxLayout, QPushButton, QLabel, QDoubleSpinBox
 
         dlg = QDialog(self)
@@ -2138,12 +2626,15 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl(info.release_url))
 
     def changeEvent(self, event) -> None:
-        """Handle window state changes for minimize to tray."""
         super().changeEvent(event)
         if event.type() == event.Type.WindowStateChange:
             if self.isMinimized() and self._tray_manager.minimize_to_tray_enabled:
-                event.ignore()
-                self.hide()
-                self._tray_manager.show_notification(
-                    "IBKRBot", "Application minimized to tray", "info"
-                )
+                # Use timer to defer hide (avoids state conflict)
+                QTimer.singleShot(0, self._minimize_to_tray_action)
+
+    def _minimize_to_tray_action(self) -> None:
+        self.setWindowState(Qt.WindowState.WindowNoState)
+        self.hide()
+        self._tray_manager.show_notification(
+            "IBKRBot", "Application minimized to tray", "info"
+        )

@@ -1,7 +1,4 @@
-"""
-Update checker for IBKRBot.
-Checks GitHub releases for new versions.
-"""
+"""Update checker - queries GitHub releases."""
 from __future__ import annotations
 import logging
 import threading
@@ -17,7 +14,6 @@ GITHUB_API_URL = "https://api.github.com/repos/JrCheesey/IBKRBot/releases/latest
 
 @dataclass
 class UpdateInfo:
-    """Information about an available update."""
     current_version: str
     latest_version: str
     release_url: str
@@ -127,8 +123,6 @@ def check_for_updates_async(
 
 
 class UpdateChecker:
-    """Manages periodic update checks."""
-
     def __init__(self, check_interval_hours: float = 24.0):
         self._interval = check_interval_hours * 3600  # Convert to seconds
         self._last_check: Optional[UpdateInfo] = None

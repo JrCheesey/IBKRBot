@@ -17,20 +17,15 @@ from .task_runner import TaskContext
 
 @dataclass
 class PriceSeries:
-    """Container for OHLCV price data."""
-    df: pd.DataFrame  # Columns: Open, High, Low, Close, Volume
+    df: pd.DataFrame  # OHLCV columns
 
 
 class DataFetchError(Exception):
-    """Raised when data fetching fails."""
     pass
 
 
 def _run_with_timeout(fn, timeout_s: float):
-    """
-    Run a blocking function in a daemon thread with a hard timeout.
-    If the function does not finish in time, raise TimeoutError.
-    """
+    """Run a function in a thread with timeout."""
     out = {"ok": False, "result": None, "err": None}
     def _wrap():
         try:
@@ -48,24 +43,7 @@ def _run_with_timeout(fn, timeout_s: float):
     return out["result"]
 
 def fetch_yahoo_ohlc(ctx: TaskContext, symbol: str, interval: str, lookback_days: int, timeout_s: float = 20.0) -> PriceSeries:
-    """
-    Fetch OHLCV data from Yahoo Finance with timeout protection.
-
-    Args:
-        ctx: TaskContext for progress reporting and cancellation
-        symbol: Stock/ETF ticker symbol (e.g., 'SPY', 'AAPL')
-        interval: Bar interval ('1h', '30m', '15m', '1d')
-        lookback_days: Number of days of historical data to fetch
-        timeout_s: Maximum seconds to wait for data (default: 20.0)
-
-    Returns:
-        PriceSeries containing DataFrame with Open, High, Low, Close, Volume
-
-    Raises:
-        RuntimeError: If yfinance not installed or data fetch fails
-        TimeoutError: If data fetch exceeds timeout
-        DataFetchError: If response data is invalid or missing required columns
-    """
+    """Fetch OHLCV data from Yahoo Finance."""
     if yf is None:
         raise RuntimeError("yfinance is not installed. Install requirements.txt")
 
@@ -93,22 +71,7 @@ def fetch_yahoo_ohlc(ctx: TaskContext, symbol: str, interval: str, lookback_days
     return PriceSeries(df=df[needed].copy())
 
 def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    """
-    Calculate Average True Range (ATR) indicator.
-
-    ATR measures market volatility by decomposing the entire range
-    of an asset price for a given period. It is the average of
-    true ranges over the specified period.
-
-    True Range = max(High-Low, |High-PrevClose|, |Low-PrevClose|)
-
-    Args:
-        df: DataFrame with 'High', 'Low', 'Close' columns
-        period: Number of periods for moving average (default: 14)
-
-    Returns:
-        Series with ATR values (NaN for first period-1 values)
-    """
+    """Calculate Average True Range from OHLC data."""
     high = df["High"]
     low = df["Low"]
     close = df["Close"]

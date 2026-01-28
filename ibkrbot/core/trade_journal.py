@@ -1,7 +1,4 @@
-"""
-Trade Journal for IBKRBot.
-Logs all trades with notes, P&L tracking, and history.
-"""
+"""Trade journal with P&L tracking."""
 from __future__ import annotations
 import json
 import logging
@@ -17,7 +14,6 @@ _log = logging.getLogger(__name__)
 
 
 class TradeStatus(Enum):
-    """Trade status enumeration."""
     OPEN = "open"
     CLOSED = "closed"
     CANCELLED = "cancelled"
@@ -25,14 +21,12 @@ class TradeStatus(Enum):
 
 
 class TradeSide(Enum):
-    """Trade side enumeration."""
     LONG = "long"
     SHORT = "short"
 
 
 @dataclass
 class TradeEntry:
-    """Represents a single trade entry in the journal."""
     id: str
     symbol: str
     side: str  # "long" or "short"
@@ -107,8 +101,6 @@ class TradeEntry:
 
 
 class TradeJournal:
-    """Manages trade history and journaling."""
-
     def __init__(self, journal_dir: Optional[Path] = None):
         if journal_dir is None:
             journal_dir = user_data_dir() / "journal"
@@ -134,8 +126,12 @@ class TradeJournal:
             _log.debug("No existing trade journal found")
 
     def _save(self) -> None:
-        """Save trades to disk."""
+        """Save trades to disk with automatic backup."""
         try:
+            # Create backup before overwriting
+            if self._journal_file.exists():
+                self._create_backup()
+
             data = {
                 'version': '1.0',
                 'updated_at': datetime.now(timezone.utc).isoformat(),
@@ -146,6 +142,28 @@ class TradeJournal:
             _log.debug(f"Saved {len(self._trades)} trades to journal")
         except Exception as e:
             _log.error(f"Error saving trade journal: {e}")
+
+    def _create_backup(self) -> None:
+        """Create a rolling backup of the journal."""
+        try:
+            backup_dir = self._journal_dir / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+
+            # Keep last 5 backups
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_file = backup_dir / f"trades_{timestamp}.json"
+
+            import shutil
+            shutil.copy2(self._journal_file, backup_file)
+
+            # Clean old backups (keep last 5)
+            backups = sorted(backup_dir.glob("trades_*.json"), reverse=True)
+            for old_backup in backups[5:]:
+                old_backup.unlink()
+
+            _log.debug(f"Created journal backup: {backup_file.name}")
+        except Exception as e:
+            _log.warning(f"Failed to create journal backup: {e}")
 
     def _generate_id(self) -> str:
         """Generate a unique trade ID."""
@@ -355,6 +373,113 @@ class TradeJournal:
             return True
         except Exception as e:
             _log.error(f"Error exporting trades: {e}")
+            return False
+
+    def export_to_excel(self, filepath: Path) -> bool:
+        """Export trades to Excel file with formatting."""
+        try:
+            trades = self.get_all_trades()
+            if not trades:
+                return False
+
+            # Try openpyxl first, fall back to CSV if not available
+            try:
+                from openpyxl import Workbook
+                from openpyxl.styles import Font, PatternFill, Alignment
+            except ImportError:
+                _log.warning("openpyxl not installed, falling back to CSV export")
+                csv_path = filepath.with_suffix('.csv')
+                return self.export_to_csv(csv_path)
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Trades"
+
+            # Headers
+            headers = [
+                'ID', 'Symbol', 'Side', 'Status', 'Entry Time', 'Entry Price',
+                'Qty', 'Exit Time', 'Exit Price', 'Stop', 'Take Profit',
+                'P&L', 'Commission', 'R-Multiple', 'Strategy', 'Notes'
+            ]
+
+            header_font = Font(bold=True)
+            header_fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+
+            # Data rows
+            green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+
+            for row_idx, trade in enumerate(trades, 2):
+                ws.cell(row=row_idx, column=1, value=trade.id)
+                ws.cell(row=row_idx, column=2, value=trade.symbol)
+                ws.cell(row=row_idx, column=3, value=trade.side)
+                ws.cell(row=row_idx, column=4, value=trade.status)
+                ws.cell(row=row_idx, column=5, value=trade.entry_time)
+                ws.cell(row=row_idx, column=6, value=trade.entry_price)
+                ws.cell(row=row_idx, column=7, value=trade.quantity)
+                ws.cell(row=row_idx, column=8, value=trade.exit_time or "")
+                ws.cell(row=row_idx, column=9, value=trade.exit_price or "")
+                ws.cell(row=row_idx, column=10, value=trade.stop_price or "")
+                ws.cell(row=row_idx, column=11, value=trade.take_profit_price or "")
+
+                pnl_cell = ws.cell(row=row_idx, column=12, value=trade.realized_pnl or "")
+                if trade.realized_pnl:
+                    if trade.realized_pnl > 0:
+                        pnl_cell.fill = green_fill
+                    elif trade.realized_pnl < 0:
+                        pnl_cell.fill = red_fill
+
+                ws.cell(row=row_idx, column=13, value=trade.commission)
+                ws.cell(row=row_idx, column=14, value=round(trade.r_multiple, 2) if trade.r_multiple else "")
+                ws.cell(row=row_idx, column=15, value=trade.strategy)
+                ws.cell(row=row_idx, column=16, value=trade.notes)
+
+            # Auto-adjust column widths
+            for col in ws.columns:
+                max_length = 0
+                column = col[0].column_letter
+                for cell in col:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                ws.column_dimensions[column].width = min(max_length + 2, 50)
+
+            # Add statistics sheet
+            stats = self.get_statistics()
+            ws_stats = wb.create_sheet("Statistics")
+            stat_rows = [
+                ("Total Trades", stats.get('total_trades', 0)),
+                ("Open Trades", stats.get('open_trades', 0)),
+                ("Closed Trades", stats.get('closed_trades', 0)),
+                ("Winners", stats.get('winners', 0)),
+                ("Losers", stats.get('losers', 0)),
+                ("Win Rate", f"{stats.get('win_rate', 0):.1f}%"),
+                ("Total P&L", f"${stats.get('total_pnl', 0):.2f}"),
+                ("Avg P&L", f"${stats.get('avg_pnl', 0):.2f}"),
+                ("Avg Winner", f"${stats.get('avg_winner', 0):.2f}"),
+                ("Avg Loser", f"${stats.get('avg_loser', 0):.2f}"),
+                ("Best Trade", f"${stats.get('best_trade', 0):.2f}"),
+                ("Worst Trade", f"${stats.get('worst_trade', 0):.2f}"),
+                ("Profit Factor", f"{stats.get('profit_factor', 0):.2f}"),
+                ("Avg R-Multiple", f"{stats.get('avg_r_multiple', 0):.2f}R"),
+            ]
+
+            for row_idx, (label, value) in enumerate(stat_rows, 1):
+                ws_stats.cell(row=row_idx, column=1, value=label).font = Font(bold=True)
+                ws_stats.cell(row=row_idx, column=2, value=value)
+
+            wb.save(filepath)
+            _log.info(f"Exported {len(trades)} trades to {filepath}")
+            return True
+        except Exception as e:
+            _log.error(f"Error exporting to Excel: {e}")
             return False
 
 

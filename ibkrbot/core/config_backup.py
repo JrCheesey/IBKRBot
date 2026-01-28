@@ -1,7 +1,4 @@
-"""
-Configuration backup and restore for IBKRBot.
-Allows users to backup and restore their settings.
-"""
+"""Config backup and restore."""
 from __future__ import annotations
 import json
 import logging
@@ -17,14 +14,12 @@ _log = logging.getLogger(__name__)
 
 
 def get_backup_dir() -> Path:
-    """Get the backup directory path."""
     backup_dir = user_data_dir() / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     return backup_dir
 
 
 def list_backups() -> List[Dict[str, Any]]:
-    """List all available backups, sorted by date (newest first)."""
     backup_dir = get_backup_dir()
     backups = []
 
@@ -57,7 +52,6 @@ def list_backups() -> List[Dict[str, Any]]:
 
 
 def _format_size(size_bytes: int) -> str:
-    """Format size in human-readable format."""
     for unit in ["B", "KB", "MB", "GB"]:
         if size_bytes < 1024:
             return f"{size_bytes:.1f} {unit}"
@@ -66,15 +60,7 @@ def _format_size(size_bytes: int) -> str:
 
 
 def create_backup(description: str = "") -> Path:
-    """
-    Create a backup of user configuration and data.
-
-    Args:
-        description: Optional description for the backup
-
-    Returns:
-        Path to the created backup file
-    """
+    """Create a backup ZIP of user config and data."""
     user_dir = user_data_dir()
     backup_dir = get_backup_dir()
 
@@ -126,18 +112,7 @@ def create_backup(description: str = "") -> Path:
 
 def restore_backup(backup_path: Path, restore_config: bool = True,
                    restore_journal: bool = True, restore_plans: bool = True) -> Dict[str, Any]:
-    """
-    Restore from a backup file.
-
-    Args:
-        backup_path: Path to the backup ZIP file
-        restore_config: Whether to restore config.json
-        restore_journal: Whether to restore trade journal
-        restore_plans: Whether to restore plans directory
-
-    Returns:
-        Dict with restoration results
-    """
+    """Restore from backup ZIP."""
     user_dir = user_data_dir()
     results = {
         "restored_files": [],
@@ -188,7 +163,6 @@ def restore_backup(backup_path: Path, restore_config: bool = True,
 
 
 def get_backup_metadata(backup_path: Path) -> Optional[Dict[str, Any]]:
-    """Get metadata from a backup file."""
     try:
         with zipfile.ZipFile(backup_path, 'r') as zf:
             if "backup_metadata.json" in zf.namelist():
@@ -200,7 +174,6 @@ def get_backup_metadata(backup_path: Path) -> Optional[Dict[str, Any]]:
 
 
 def delete_backup(backup_path: Path) -> bool:
-    """Delete a backup file."""
     try:
         if backup_path.exists():
             backup_path.unlink()
@@ -212,15 +185,7 @@ def delete_backup(backup_path: Path) -> bool:
 
 
 def cleanup_old_backups(keep_count: int = 10) -> int:
-    """
-    Clean up old backups, keeping only the most recent ones.
-
-    Args:
-        keep_count: Number of backups to keep
-
-    Returns:
-        Number of backups deleted
-    """
+    """Remove old backups, keeping the most recent ones."""
     backups = list_backups()
     deleted = 0
 

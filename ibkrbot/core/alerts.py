@@ -1,7 +1,4 @@
-"""
-Custom price alerts system for IBKRBot.
-Monitors price levels and triggers notifications.
-"""
+"""Price alerts for IBKRBot."""
 from __future__ import annotations
 import json
 import logging
@@ -19,7 +16,6 @@ _log = logging.getLogger(__name__)
 
 
 class AlertCondition(Enum):
-    """Alert trigger conditions."""
     PRICE_ABOVE = "price_above"
     PRICE_BELOW = "price_below"
     PRICE_CROSSES_ABOVE = "crosses_above"
@@ -27,7 +23,6 @@ class AlertCondition(Enum):
 
 
 class AlertStatus(Enum):
-    """Alert status."""
     ACTIVE = "active"
     TRIGGERED = "triggered"
     EXPIRED = "expired"
@@ -36,7 +31,6 @@ class AlertStatus(Enum):
 
 @dataclass
 class PriceAlert:
-    """Represents a price alert."""
     id: str
     symbol: str
     condition: str  # AlertCondition value
@@ -108,8 +102,6 @@ class PriceAlert:
 
 
 class AlertManager:
-    """Manages price alerts."""
-
     def __init__(self, alerts_file: Optional[Path] = None):
         if alerts_file is None:
             alerts_file = user_data_dir() / "alerts.json"

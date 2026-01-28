@@ -22,7 +22,7 @@ def setup_logging() -> logging.Logger:
     fh = RotatingFileHandler(
         log_path,
         encoding="utf-8",
-        maxBytes=LoggingDefaults.MAX_LOG_BYTES,
+        maxBytes=LoggingDefaults.MAX_BYTES,
         backupCount=LoggingDefaults.BACKUP_COUNT
     )
     fh.setLevel(logging.INFO)

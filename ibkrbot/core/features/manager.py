@@ -19,6 +19,8 @@ class ManagerWorker(QObject):
         self.cfg = cfg
         self.symbol_cfg = symbol_cfg
         self._stop_event = threading.Event()
+        # Check if snapshot price is enabled (default: False to avoid subscription errors)
+        self._snapshot_enabled = cfg.get("manager", {}).get("enable_snapshot_price", False)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -62,20 +64,30 @@ class ManagerWorker(QObject):
 
                 # R-multiple (best-effort): needs placed plan + snapshot price
                 plan = self._load_placed_plan(symbol)
-                if plan and p_sym:
+                if plan and p_sym and self._snapshot_enabled:
                     entry = float(plan["levels"].get("entry_limit") or plan["levels"].get("last_close") or 0.0)
                     stop = float(plan["levels"].get("stop") or 0.0)
-                    rps = max(entry - stop, RiskDefaults.EPSILON)
+                    direction = plan.get("direction", "Long")
+                    # For short positions, risk calculation is different
+                    if direction == "Short":
+                        rps = max(stop - entry, RiskDefaults.EPSILON)
+                    else:
+                        rps = max(entry - stop, RiskDefaults.EPSILON)
                     px = None
                     try:
                         px = self.ib.snapshot_price(contract, timeout=Timeouts.IBKR_QUICK)
                     except Exception:
                         px = None
                     if px:
-                        r = (float(px) - entry) / rps
-                        self.log.emit(f"[{symbol}] price={px:.2f} entry={entry:.2f} stop={stop:.2f} R={r:.2f}")
+                        if direction == "Short":
+                            r = (entry - float(px)) / rps
+                        else:
+                            r = (float(px) - entry) / rps
+                        self.log.emit(f"[{symbol}] ({direction}) price={px:.2f} entry={entry:.2f} stop={stop:.2f} R={r:.2f}")
                     else:
                         self.log.emit(f"[{symbol}] price snapshot unavailable (permissions/delay).")
+                elif plan and p_sym and not self._snapshot_enabled:
+                    self.log.emit(f"[{symbol}] snapshot price disabled in settings.")
 
                 # Sleep in small increments so stop triggers quickly
                 slept = 0.0

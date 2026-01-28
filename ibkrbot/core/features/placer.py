@@ -97,9 +97,10 @@ def place_bracket_from_plan(ctx: TaskContext, ib: IbkrClient, symbol_cfg: Dict[s
     entry = float(plan["levels"]["entry_limit"])
     stop = float(plan["levels"]["stop"])
     take = float(plan["levels"]["take_profit"])
+    action = plan.get("action", "BUY")  # Default to BUY for backwards compatibility
 
     contract = from_symbol_cfg(symbol_cfg)
-    parent, take_o, stop_o = bracket_orders("BUY", qty, entry, take, stop)
+    parent, take_o, stop_o = bracket_orders(action, qty, entry, take, stop)
 
     parent_id = ib.next_order_id()
     take_id = ib.next_order_id()
