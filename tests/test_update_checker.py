@@ -65,7 +65,7 @@ class TestUpdateInfo:
 class TestCheckForUpdates:
     """Tests for check_for_updates function."""
 
-    @patch('ibkrbot.core.update_checker.urllib.request.urlopen')
+    @patch('urllib.request.urlopen')
     def test_check_for_updates_newer_available(self, mock_urlopen):
         """Test check when newer version is available."""
         # Mock response
@@ -85,7 +85,7 @@ class TestCheckForUpdates:
         assert result.is_update_available is True
         assert result.latest_version == "99.0.0"
 
-    @patch('ibkrbot.core.update_checker.urllib.request.urlopen')
+    @patch('urllib.request.urlopen')
     def test_check_for_updates_no_newer(self, mock_urlopen):
         """Test check when no newer version is available."""
         mock_response = MagicMock()
@@ -103,7 +103,7 @@ class TestCheckForUpdates:
         assert result is not None
         assert result.is_update_available is False
 
-    @patch('ibkrbot.core.update_checker.urllib.request.urlopen')
+    @patch('urllib.request.urlopen')
     def test_check_for_updates_network_error(self, mock_urlopen):
         """Test check handles network errors gracefully."""
         import urllib.error
@@ -113,7 +113,7 @@ class TestCheckForUpdates:
 
         assert result is None
 
-    @patch('ibkrbot.core.update_checker.urllib.request.urlopen')
+    @patch('urllib.request.urlopen')
     def test_check_for_updates_404(self, mock_urlopen):
         """Test check handles 404 errors (no releases)."""
         import urllib.error

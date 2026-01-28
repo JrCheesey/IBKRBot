@@ -164,9 +164,9 @@ class TestListBackups:
         """Test listing multiple backups."""
         import time
 
-        # Create multiple backups
+        # Create multiple backups with sufficient delay for unique timestamps
         create_backup()
-        time.sleep(0.1)  # Ensure different timestamps
+        time.sleep(1.1)  # Sleep > 1 second to ensure different second-resolution timestamps
         create_backup()
 
         backups = list_backups()
@@ -210,10 +210,11 @@ class TestCleanupBackups:
         """Test cleanup keeps specified number of backups."""
         import time
 
-        # Create several backups
-        for _ in range(5):
+        # Create several backups with unique timestamps
+        for i in range(5):
             create_backup()
-            time.sleep(0.1)
+            if i < 4:  # Don't sleep after last one
+                time.sleep(1.1)  # Sleep > 1 second for unique timestamps
 
         # Should have 5 backups
         assert len(list_backups()) == 5
