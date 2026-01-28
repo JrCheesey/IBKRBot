@@ -30,7 +30,15 @@ from ..core.visual.chart import save_thumbnail_from_plan
 from ..core.constants import Timeouts, OrderStatus
 from .logging_handler import QtLogEmitter, QtLogHandler
 from .dialogs import TradeTicketDialog, SettingsDialog, DiffDialog, compute_plan_diff, format_trade_ticket_summary
-from .theme import Colors, Fonts, Styles, Spacing
+from .theme import Colors, Fonts, Styles, Spacing, ThemeMode, get_theme_manager, apply_theme
+
+# v1.0.2 feature imports
+from ..core.sound import get_sound_player, SOUND_SUCCESS, SOUND_ERROR, SOUND_ORDER_FILLED, SOUND_CONNECT, SOUND_DISCONNECT
+from ..core.update_checker import check_for_updates_async, UpdateInfo
+from ..core.trade_journal import get_trade_journal
+from ..core.alerts import get_alert_manager, AlertCondition
+from ..core.system_tray import get_tray_manager
+from ..core.auto_reconnect import get_reconnect_manager, ReconnectConfig
 
 def _ts_now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -60,6 +68,17 @@ class MainWindow(QMainWindow):
         self._connection_check_timer = QTimer()
         self._connection_check_timer.timeout.connect(self._check_connection_health)
         self._connection_check_timer.setInterval(30000)  # Check every 30 seconds
+
+        # v1.0.2 feature initialization
+        self._sound_player = get_sound_player()
+        self._trade_journal = get_trade_journal()
+        self._alert_manager = get_alert_manager()
+        self._tray_manager = get_tray_manager()
+        self._reconnect_manager = get_reconnect_manager()
+        self._dark_mode_enabled = False
+
+        # Setup auto-reconnect callbacks
+        self._setup_auto_reconnect()
 
         # Set window title with version
         from ..core.constants import AppInfo
@@ -393,9 +412,51 @@ class MainWindow(QMainWindow):
         m_file.addAction(act_open_plans)
         m_file.addAction(act_open_logs)
         m_file.addSeparator()
+        act_backup = QAction("Backup Settings...", self)
+        act_restore = QAction("Restore Settings...", self)
+        act_backup.triggered.connect(self._on_backup_settings)
+        act_restore.triggered.connect(self._on_restore_settings)
+        m_file.addAction(act_backup)
+        m_file.addAction(act_restore)
+        m_file.addSeparator()
         m_file.addAction(act_settings)
         m_file.addSeparator()
         m_file.addAction(act_exit)
+
+        # View menu (v1.0.2)
+        m_view = QMenu("&View", self)
+        bar.addMenu(m_view)
+
+        self.act_dark_mode = QAction("Dark Mode", self)
+        self.act_dark_mode.setCheckable(True)
+        self.act_dark_mode.setChecked(False)
+        self.act_dark_mode.triggered.connect(self._toggle_dark_mode)
+        m_view.addAction(self.act_dark_mode)
+
+        m_view.addSeparator()
+
+        act_trade_journal = QAction("Trade Journal...", self)
+        act_trade_journal.triggered.connect(self._show_trade_journal)
+        m_view.addAction(act_trade_journal)
+
+        act_alerts = QAction("Price Alerts...", self)
+        act_alerts.triggered.connect(self._show_alerts)
+        m_view.addAction(act_alerts)
+
+        m_view.addSeparator()
+
+        self.act_sound = QAction("Sound Notifications", self)
+        self.act_sound.setCheckable(True)
+        self.act_sound.setChecked(self._sound_player.enabled)
+        self.act_sound.triggered.connect(self._toggle_sound)
+        m_view.addAction(self.act_sound)
+
+        self.act_tray = QAction("Minimize to Tray", self)
+        self.act_tray.setCheckable(True)
+        self.act_tray.setChecked(self._tray_manager.minimize_to_tray_enabled if self._tray_manager.is_available else False)
+        self.act_tray.setEnabled(self._tray_manager.is_available)
+        self.act_tray.triggered.connect(self._toggle_minimize_to_tray)
+        m_view.addAction(self.act_tray)
 
         m_help = QMenu("&Help", self)
         bar.addMenu(m_help)
@@ -417,6 +478,10 @@ class MainWindow(QMainWindow):
         m_help.addSeparator()
         m_help.addAction(act_shortcuts)
         m_help.addAction(act_disclaimer)
+        m_help.addSeparator()
+        act_check_updates = QAction("Check for Updates...", self)
+        act_check_updates.triggered.connect(self._check_for_updates)
+        m_help.addAction(act_check_updates)
         m_help.addSeparator()
         m_help.addAction(act_about)
 
@@ -464,6 +529,17 @@ class MainWindow(QMainWindow):
                 self.conn_text.setText("Disconnected")
                 self.status_label.setText("Connection lost")
                 self._update_workflow()
+
+                # Play disconnect sound
+                self._sound_player.play(SOUND_DISCONNECT)
+
+                # Update tray status
+                if self._tray_manager.is_available:
+                    self._tray_manager.set_status("Disconnected")
+                    self._tray_manager.show_notification("IBKRBot", "Connection to IB Gateway lost", "warning")
+
+                # Trigger auto-reconnect
+                self._reconnect_manager.on_connection_lost()
         except Exception as e:
             self.logger.error(f"Connection health check failed: {e}")
 
@@ -504,7 +580,7 @@ class MainWindow(QMainWindow):
             f"<li>Background position monitoring</li>"
             f"</ul>"
             f"<hr>"
-            f"<p><b>Data Storage:</b> {self.paths['root']}</p>"
+            f"<p><b>Data Storage:</b> {self._paths['root']}</p>"
             f"<p><b>License:</b> MIT License (see LICENSE file)</p>"
             f"<p><b>Repository:</b> <a href='{AppInfo.REPO_URL}'>{AppInfo.REPO_URL}</a></p>"
             f"<hr>"
@@ -1190,6 +1266,16 @@ class MainWindow(QMainWindow):
         mode_display = mode.upper()
         self.netliq_label.setText(f"NetLiq: {self._net_liq:,.2f} ({mode_display})")
 
+        # Play connect sound
+        self._sound_player.play(SOUND_CONNECT)
+
+        # Update tray status
+        if self._tray_manager.is_available:
+            self._tray_manager.set_status(f"Connected ({mode_display})")
+
+        # Notify reconnect manager of successful connection
+        self._reconnect_manager.on_connection_success()
+
         if mode == "paper":
             self.paper_note.setText("✅ Paper Mode: Simulated trading (NetLiq often shows $1,000,000)")
             self.paper_note.setStyleSheet("color: #006600; font-weight: bold;")
@@ -1400,9 +1486,29 @@ class MainWindow(QMainWindow):
             self.open_bracket_label.setText("Open bracket: likely YES (refresh to confirm)")
             self._has_open_bracket = None
             self._update_workflow()
+
+            # Play order placed sound
+            self._sound_player.play(SOUND_ORDER_FILLED)
+
+            # Log to trade journal
+            placed_plan = r.get("plan", {})
+            try:
+                self._trade_journal.add_trade(
+                    symbol=placed_plan.get("symbol", ""),
+                    side=placed_plan.get("side", "long"),
+                    entry_price=placed_plan.get("levels", {}).get("entry_limit", 0),
+                    quantity=placed_plan.get("risk", {}).get("qty", 0),
+                    stop_price=placed_plan.get("levels", {}).get("stop"),
+                    take_profit_price=placed_plan.get("levels", {}).get("take_profit"),
+                    strategy=placed_plan.get("strategy", "swing_pullback_atr"),
+                    plan_file=r.get("placed_path"),
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to log trade to journal: {e}")
+
             self._on_refresh()  # auto refresh after place
         task.signals.finished.connect(_done)
-        task.signals.error.connect(lambda e: QMessageBox.warning(self, "Place failed", e))
+        task.signals.error.connect(lambda e: (self._sound_player.play(SOUND_ERROR), QMessageBox.warning(self, "Place failed", e)))
         self.runner.start(task)
 
     def _on_refresh(self) -> None:
@@ -1707,3 +1813,324 @@ class MainWindow(QMainWindow):
         diff = compute_plan_diff(draft, placed)
         dlg = DiffDialog("Compare Draft vs Placed", diff, parent=self)
         dlg.exec()
+
+    # --------------------- v1.0.2 Feature Methods ---------------------
+
+    def _setup_auto_reconnect(self) -> None:
+        """Setup auto-reconnect callbacks."""
+        def do_connect() -> bool:
+            try:
+                mode = self.cfg["ibkr"]["mode"]
+                port = int(self.cfg["ibkr"]["port_paper"] if mode == "paper" else self.cfg["ibkr"]["port_live"])
+                host = self.cfg["ibkr"]["host"]
+                client_id = int(self.cfg["ibkr"]["client_id"])
+                self.ib.connect_and_start(host, port, client_id, timeout=Timeouts.IBKR_STANDARD)
+                return self.ib.isConnected()
+            except Exception:
+                return False
+
+        def is_connected() -> bool:
+            return self.ib.isConnected() if self.ib else False
+
+        def on_reconnect_success():
+            self.logger.info("Auto-reconnect successful")
+            self._sound_player.play(SOUND_CONNECT)
+            QTimer.singleShot(0, lambda: self._connect_done({"net_liq": self.ib.get_net_liq(timeout=Timeouts.IBKR_STANDARD)}))
+
+        def on_reconnect_failed(attempt: int):
+            self.logger.warning(f"Auto-reconnect attempt {attempt} failed")
+
+        def on_exhausted():
+            self.logger.error("All auto-reconnect attempts exhausted")
+            self._sound_player.play(SOUND_ERROR)
+            QTimer.singleShot(0, lambda: QMessageBox.warning(self, "Connection Lost", "Could not reconnect to IB Gateway after multiple attempts."))
+
+        self._reconnect_manager.set_callbacks(
+            connect=do_connect,
+            is_connected=is_connected,
+            on_success=on_reconnect_success,
+            on_failed=on_reconnect_failed,
+            on_exhausted=on_exhausted,
+        )
+
+    def _toggle_dark_mode(self, checked: bool) -> None:
+        """Toggle dark mode on/off."""
+        self._dark_mode_enabled = checked
+        mode = ThemeMode.DARK if checked else ThemeMode.LIGHT
+        apply_theme(mode)
+        self.logger.info(f"Dark mode {'enabled' if checked else 'disabled'}")
+
+    def _toggle_sound(self, checked: bool) -> None:
+        """Toggle sound notifications."""
+        self._sound_player.enabled = checked
+        self.logger.info(f"Sound notifications {'enabled' if checked else 'disabled'}")
+
+    def _toggle_minimize_to_tray(self, checked: bool) -> None:
+        """Toggle minimize to tray behavior."""
+        self._tray_manager.set_minimize_to_tray(checked)
+        if checked and self._tray_manager.is_available:
+            self._setup_tray_icon()
+        self.logger.info(f"Minimize to tray {'enabled' if checked else 'disabled'}")
+
+    def _setup_tray_icon(self) -> None:
+        """Setup system tray icon."""
+        if not self._tray_manager.is_available:
+            return
+
+        self._tray_manager.setup(self)
+        self._tray_manager.set_show_callback(self._show_from_tray)
+        self._tray_manager.set_quit_callback(self.close)
+        self._tray_manager.show()
+
+    def _show_from_tray(self) -> None:
+        """Show window from tray."""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _show_trade_journal(self) -> None:
+        """Show trade journal dialog."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QHBoxLayout, QPushButton, QLabel
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Trade Journal")
+        dlg.resize(900, 600)
+
+        layout = QVBoxLayout()
+
+        # Statistics summary
+        stats = self._trade_journal.get_statistics()
+        stats_text = (
+            f"Total Trades: {stats['total_trades']} | "
+            f"Open: {stats['open_trades']} | "
+            f"Closed: {stats['closed_trades']} | "
+            f"Win Rate: {stats['win_rate']:.1f}% | "
+            f"Total P&L: ${stats['total_pnl']:,.2f}"
+        )
+        stats_label = QLabel(stats_text)
+        stats_label.setStyleSheet("font-weight: bold; padding: 8px;")
+        layout.addWidget(stats_label)
+
+        # Trades table
+        trades = self._trade_journal.get_all_trades()
+        table = QTableWidget(len(trades), 9)
+        table.setHorizontalHeaderLabels([
+            "ID", "Symbol", "Side", "Status", "Entry", "Exit", "Qty", "P&L", "R-Multiple"
+        ])
+        table.setAlternatingRowColors(True)
+
+        for row, trade in enumerate(trades):
+            items = [
+                QTableWidgetItem(trade.id),
+                QTableWidgetItem(trade.symbol),
+                QTableWidgetItem(trade.side),
+                QTableWidgetItem(trade.status),
+                QTableWidgetItem(f"${trade.entry_price:.2f}"),
+                QTableWidgetItem(f"${trade.exit_price:.2f}" if trade.exit_price else "--"),
+                QTableWidgetItem(str(trade.quantity)),
+                QTableWidgetItem(f"${trade.realized_pnl:+,.2f}" if trade.realized_pnl else "--"),
+                QTableWidgetItem(f"{trade.r_multiple:.2f}R" if trade.r_multiple else "--"),
+            ]
+            for col, item in enumerate(items):
+                table.setItem(row, col, item)
+
+        layout.addWidget(table)
+
+        # Buttons
+        btns = QHBoxLayout()
+        btn_export = QPushButton("Export to CSV")
+        btn_export.clicked.connect(lambda: self._export_journal_csv())
+        btns.addWidget(btn_export)
+        btns.addStretch()
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        btns.addWidget(btn_close)
+        layout.addLayout(btns)
+
+        dlg.setLayout(layout)
+        dlg.exec()
+
+    def _export_journal_csv(self) -> None:
+        """Export trade journal to CSV."""
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getSaveFileName(self, "Export Trade Journal", "trades.csv", "CSV Files (*.csv)")
+        if path:
+            if self._trade_journal.export_to_csv(Path(path)):
+                QMessageBox.information(self, "Export Complete", f"Trades exported to:\n{path}")
+            else:
+                QMessageBox.warning(self, "Export Failed", "Failed to export trades.")
+
+    def _show_alerts(self) -> None:
+        """Show alerts management dialog."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QHBoxLayout, QPushButton, QLabel, QDoubleSpinBox
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Price Alerts")
+        dlg.resize(700, 500)
+
+        layout = QVBoxLayout()
+
+        # Add alert section
+        add_row = QHBoxLayout()
+        add_row.addWidget(QLabel("Symbol:"))
+        symbol_input = QLineEdit()
+        symbol_input.setPlaceholderText("AAPL")
+        symbol_input.setMaximumWidth(80)
+        add_row.addWidget(symbol_input)
+
+        add_row.addWidget(QLabel("Price:"))
+        price_input = QDoubleSpinBox()
+        price_input.setMaximum(1000000)
+        price_input.setDecimals(2)
+        add_row.addWidget(price_input)
+
+        condition_combo = QComboBox()
+        condition_combo.addItems(["Above", "Below", "Crosses Above", "Crosses Below"])
+        add_row.addWidget(condition_combo)
+
+        btn_add = QPushButton("Add Alert")
+        add_row.addWidget(btn_add)
+        add_row.addStretch()
+        layout.addLayout(add_row)
+
+        # Alerts table
+        alerts = self._alert_manager.get_all_alerts()
+        table = QTableWidget(len(alerts), 5)
+        table.setHorizontalHeaderLabels(["ID", "Symbol", "Condition", "Price", "Status"])
+        table.setAlternatingRowColors(True)
+
+        def refresh_table():
+            alerts = self._alert_manager.get_all_alerts()
+            table.setRowCount(len(alerts))
+            for row, alert in enumerate(alerts):
+                items = [
+                    QTableWidgetItem(alert.id),
+                    QTableWidgetItem(alert.symbol),
+                    QTableWidgetItem(alert.condition),
+                    QTableWidgetItem(f"${alert.price:.2f}"),
+                    QTableWidgetItem(alert.status),
+                ]
+                for col, item in enumerate(items):
+                    table.setItem(row, col, item)
+
+        refresh_table()
+
+        def add_alert():
+            sym = symbol_input.text().strip().upper()
+            price = price_input.value()
+            cond_map = {
+                "Above": AlertCondition.PRICE_ABOVE,
+                "Below": AlertCondition.PRICE_BELOW,
+                "Crosses Above": AlertCondition.PRICE_CROSSES_ABOVE,
+                "Crosses Below": AlertCondition.PRICE_CROSSES_BELOW,
+            }
+            cond = cond_map.get(condition_combo.currentText(), AlertCondition.PRICE_ABOVE)
+            if sym and price > 0:
+                self._alert_manager.add_alert(sym, cond, price)
+                refresh_table()
+                symbol_input.clear()
+                self.logger.info(f"Added alert: {sym} {cond.value} ${price:.2f}")
+
+        btn_add.clicked.connect(add_alert)
+        layout.addWidget(table)
+
+        # Buttons
+        btns = QHBoxLayout()
+        btns.addStretch()
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(dlg.accept)
+        btns.addWidget(btn_close)
+        layout.addLayout(btns)
+
+        dlg.setLayout(layout)
+        dlg.exec()
+
+    def _on_backup_settings(self) -> None:
+        """Create a settings backup."""
+        from ..core.config_backup import create_backup
+
+        try:
+            backup_path = create_backup(description="Manual backup")
+            QMessageBox.information(self, "Backup Created", f"Settings backed up to:\n{backup_path}")
+            self.logger.info(f"Settings backup created: {backup_path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Backup Failed", f"Failed to create backup:\n{str(e)}")
+
+    def _on_restore_settings(self) -> None:
+        """Restore settings from a backup."""
+        from PySide6.QtWidgets import QFileDialog
+        from ..core.config_backup import restore_backup, get_backup_dir
+
+        backup_dir = get_backup_dir()
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Backup File", str(backup_dir), "Backup Files (*.zip)"
+        )
+
+        if path:
+            reply = QMessageBox.question(
+                self, "Restore Backup",
+                "This will overwrite your current settings.\n\nContinue?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                try:
+                    results = restore_backup(Path(path))
+                    self.cfg = load_config()  # Reload config
+                    QMessageBox.information(
+                        self, "Restore Complete",
+                        f"Restored {len(results['restored_files'])} files.\n\nRestart the application to apply all changes."
+                    )
+                except Exception as e:
+                    QMessageBox.warning(self, "Restore Failed", f"Failed to restore backup:\n{str(e)}")
+
+    def _check_for_updates(self) -> None:
+        """Check for application updates."""
+        self.logger.info("Checking for updates...")
+        self.statusBar().showMessage("Checking for updates...", 3000)
+
+        def on_result(info: Optional[UpdateInfo]):
+            if info is None:
+                QTimer.singleShot(0, lambda: QMessageBox.information(
+                    self, "Update Check", "Could not check for updates.\nPlease try again later."
+                ))
+            elif info.is_update_available:
+                QTimer.singleShot(0, lambda: self._show_update_available(info))
+            else:
+                QTimer.singleShot(0, lambda: QMessageBox.information(
+                    self, "Up to Date",
+                    f"You are running the latest version ({info.current_version})."
+                ))
+
+        check_for_updates_async(on_result)
+
+    def _show_update_available(self, info: UpdateInfo) -> None:
+        """Show update available dialog."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Update Available")
+        msg.setIcon(QMessageBox.Information)
+        msg.setText(f"<h3>A new version is available!</h3>")
+        msg.setInformativeText(
+            f"<b>Current:</b> {info.current_version}<br>"
+            f"<b>Latest:</b> {info.latest_version}<br><br>"
+            f"<b>Release Notes:</b><br>{info.release_notes[:500]}..."
+        )
+
+        download_btn = msg.addButton("Download", QMessageBox.ActionRole)
+        msg.addButton(QMessageBox.Close)
+
+        msg.exec()
+
+        if msg.clickedButton() == download_btn:
+            QDesktopServices.openUrl(QUrl(info.release_url))
+
+    def changeEvent(self, event) -> None:
+        """Handle window state changes for minimize to tray."""
+        super().changeEvent(event)
+        if event.type() == event.Type.WindowStateChange:
+            if self.isMinimized() and self._tray_manager.minimize_to_tray_enabled:
+                event.ignore()
+                self.hide()
+                self._tray_manager.show_notification(
+                    "IBKRBot", "Application minimized to tray", "info"
+                )
