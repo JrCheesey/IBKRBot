@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ibkrbot"
+version = "2.0.0"
+description = "Paper-first Windows desktop app for IBKR swing trading with bracket orders"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.5",
+    "yfinance>=0.2.40",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "ibapi>=9.81.1",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+ibkrbot = "ibkrbot.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ibkrbot*"]
+
+[tool.setuptools.package-data]
+ibkrbot = ["resources/**/*"]

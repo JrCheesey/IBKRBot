@@ -1,0 +1,26 @@
+IBKRBot v2 — START HERE (Windows)
+
+1) IB Gateway (Paper)
+   - Install and sign in to Paper
+   - Settings → API:
+     - Enable ActiveX and Socket Clients
+     - Socket port: 4002 (paper)
+     - Trusted IPs: 127.0.0.1
+
+2) Run from source
+   conda activate ibkrbot
+   pip install -r requirements.txt
+   python -m ibkrbot.main
+
+3) Run from packaged EXE
+   - Unzip the release zip
+   - Start IB Gateway (Paper) first
+   - Run dist\IBKRBot\IBKRBot.exe
+
+User data folder (plans/logs/config):
+   %APPDATA%\IBKRBot\
+
+Notes
+- Paper NetLiq is simulated by IBKR (often 1,000,000).
+- If Canadian ETFs reject via API due to permissions/settings, test with US ETFs like SPY first.
+- The app ALWAYS asks for confirmation before submitting.

@@ -1,0 +1,9 @@
+IBKRBot v2 — Setup Checklist
+
+[ ] IB Gateway installed
+[ ] Logged in to Paper account
+[ ] API enabled (Socket clients)
+    [ ] Port 4002
+    [ ] Trusted IP 127.0.0.1
+[ ] No other app using the same clientId (default client_id=7)
+[ ] Test with SPY first

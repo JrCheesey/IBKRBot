@@ -1,0 +1,59 @@
+{
+  "ibkr": {
+    "host": "127.0.0.1",
+    "port_paper": 4002,
+    "port_live": 4001,
+    "client_id": 7,
+    "mode": "paper"
+  },
+  "risk": {
+    "max_notional_pct": 0.05,
+    "max_loss_pct": 0.005,
+    "r_multiple_take": 2.0,
+    "no_dupe_block_on_position": true
+  },
+  "strategy": {
+    "bar_interval": "1h",
+    "lookback_days": 30,
+    "atr_period": 14,
+    "pullback_pct": 0.25,
+    "stop_atr_mult": 1.0,
+    "limit_offset_atr": 0.1
+  },
+  "manager": {
+    "poll_seconds": 10
+  },
+  "janitor": {
+    "eod_local": "15:40",
+    "stale_minutes": 240
+  },
+  "symbols": [
+    {
+      "symbol": "SPY",
+      "exchange": "ARCA",
+      "currency": "USD",
+      "primaryExchange": "ARCA"
+    },
+    {
+      "symbol": "EWC",
+      "exchange": "ARCA",
+      "currency": "USD",
+      "primaryExchange": "ARCA"
+    },
+    {
+      "symbol": "VFV",
+      "exchange": "TSE",
+      "currency": "CAD",
+      "primaryExchange": "TSE"
+    },
+    {
+      "symbol": "XIU",
+      "exchange": "TSE",
+      "currency": "CAD",
+      "primaryExchange": "TSE"
+    }
+  ],
+  "data": {
+    "yfinance_timeout_s": 20.0
+  }
+}

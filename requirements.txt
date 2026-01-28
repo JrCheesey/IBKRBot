@@ -1,0 +1,7 @@
+PySide6>=6.5
+yfinance>=0.2.40
+pandas>=2.0
+numpy>=1.24
+ibapi>=9.81.1
+pyinstaller>=6.0
+matplotlib>=3.8
